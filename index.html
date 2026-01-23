@@ -1,0 +1,121 @@
+
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0b0b0f" />
+  <title>Murty Governance Cockpit v10</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      /* DARK MODE (Default - Technical Blueprint) */
+      --bg: #09090b;
+      --surface: #121217;
+      --surface2: #1c1c24;
+      --surfaceGlass: rgba(18,18,23,0.85);
+      --card: #18181f;
+      --border: rgba(255,255,255,0.08);
+      --border2: rgba(255,255,255,0.04);
+      --ink: #FAFAFA;
+      --inkDim: #A1A1AA;
+      
+      /* Grid Lines */
+      --grid-major: rgba(255,255,255,0.03);
+      --grid-minor: rgba(255,255,255,0.015);
+      
+      /* Brand Colors */
+      --accent: #D4FF00;
+      --accentDim: rgba(212,255,0,0.15);
+      --risk: #FF4545;
+      --warn: #FFC000;
+      --safe: #00E070;
+    }
+    
+    html.light {
+      /* LIGHT MODE (Executive Paper) */
+      --bg: #F8FAFC; 
+      --surface: #FFFFFF; 
+      --surface2: #F1F5F9; 
+      --surfaceGlass: rgba(255,255,255,0.90);
+      --card: #FFFFFF;
+      --border: #E2E8F0; 
+      --border2: #F1F5F9; 
+      --ink: #0F172A; 
+      --inkDim: #64748B; 
+      
+      /* Grid Lines */
+      --grid-major: rgba(0,0,0,0.04);
+      --grid-minor: rgba(0,0,0,0.02);
+      
+      /* Brand Colors */
+      --accent: #0050E6; 
+      --accentDim: rgba(0, 80, 230, 0.08);
+      --risk: #DC2626; 
+      --warn: #D97706; 
+      --safe: #16A34A; 
+    }
+
+    body {
+      background-color: var(--bg);
+      /* Advanced Technical Grid */
+      background-image: 
+        linear-gradient(var(--grid-major) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid-major) 1px, transparent 1px),
+        linear-gradient(var(--grid-minor) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid-minor) 1px, transparent 1px);
+      background-size: 100px 100px, 100px 100px, 20px 20px, 20px 20px;
+      background-position: center top;
+      
+      color: var(--ink);
+      font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      transition: background-color 0.3s ease, color 0.3s ease;
+    }
+
+    .font-disp { font-family: "Outfit", system-ui, sans-serif; }
+    .font-mono { font-family: "JetBrains Mono", monospace; }
+    
+    /* Scrollbar styling */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--inkDim); }
+
+    /* Utilities */
+    .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+    
+    /* Animations */
+    @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+    .animate-fade-in { animation: fade-in 0.4s ease-out; }
+    
+    @keyframes slide-up { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    .animate-slide-up { animation: slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+    
+    @keyframes scale-in { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+    .animate-scale-in { animation: scale-in 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+
+    @keyframes slide-in-right { from { transform: translateX(100%); } to { transform: translateX(0); } }
+    .animate-slide-in-right { animation: slide-in-right 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+  </style>
+<script type="importmap">
+{
+  "imports": {
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "recharts": "https://esm.sh/recharts@^2.12.0",
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "html2canvas": "https://esm.sh/html2canvas@1.4.1",
+    "jspdf": "https://esm.sh/jspdf@2.5.1"
+  }
+}
+</script>
+</head>
+<body>
+  <div id="root"></div>
+</body>
+</html>
