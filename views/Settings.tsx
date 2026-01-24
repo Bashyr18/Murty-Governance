@@ -190,7 +190,7 @@ const TaxonomyEditor = ({
                     const isUsed = usageCheck ? usageCheck(itemId) : false;
 
                     return (
-                        <div key={idx} className={`flex items-center gap-3 p-2 rounded-xl transition-colors group/item animate-fade-in ${isDup ? 'bg-[var(--risk)]/10 border border-[var(--risk)]/20' : 'hover:bg-[var(--surface2)]'}`}>
+                        <div key={item[idField] || item.id || idx} className={`flex items-center gap-3 p-2 rounded-xl transition-colors group/item animate-fade-in ${isDup ? 'bg-[var(--risk)]/10 border border-[var(--risk)]/20' : 'hover:bg-[var(--surface2)]'}`}>
                             <div className="w-24 shrink-0">
                                 <input 
                                     value={itemId}
@@ -287,6 +287,20 @@ const ConfigTable: React.FC<ConfigTableProps> = ({
         return new Set(Object.keys(counts).filter(k => counts[k] > 1));
     };
 
+    // Helper: Generate a stable React key from row data
+    const getRowKey = (row: any, idx: number) => {
+        // Try common ID fields first
+        if (row.id) return row.id;
+        if (row.key) return row.key;
+        if (row.grade) return row.grade;
+        if (row.role) return row.role;
+        if (row.level) return `lvl-${row.level}`;
+        if (row.lifecycleId) return row.lifecycleId;
+        // Fallback to composed string if no single ID found
+        const values = Object.values(row).join('-');
+        return `${values}-${idx}`;
+    };
+
     return (
         <div className="border border-[var(--border)] rounded-3xl overflow-hidden bg-[var(--card)] mb-8 shadow-sm transition-all hover:shadow-md group">
             
@@ -324,7 +338,7 @@ const ConfigTable: React.FC<ConfigTableProps> = ({
                     {isMobile ? (
                         <div className="p-4 space-y-4">
                             {data.map((row, rIdx) => (
-                                <div key={rIdx} className="bg-[var(--surface2)] rounded-xl p-4 space-y-3 border border-[var(--border)] relative">
+                                <div key={getRowKey(row, rIdx)} className="bg-[var(--surface2)] rounded-xl p-4 space-y-3 border border-[var(--border)] relative">
                                     {onDelete && (
                                         <button onClick={() => onDelete(rIdx)} className="absolute top-2 right-2 p-2 text-[var(--inkDim)] hover:text-[var(--risk)]">
                                             <Trash2 size={16} />
@@ -393,7 +407,7 @@ const ConfigTable: React.FC<ConfigTableProps> = ({
                                 <tbody className="divide-y divide-[var(--border2)]">
                                     {data.map((row, rIdx) => {
                                         return (
-                                            <tr key={rIdx} className="hover:bg-[var(--surface2)] transition-colors group/row">
+                                            <tr key={getRowKey(row, rIdx)} className="hover:bg-[var(--surface2)] transition-colors group/row">
                                                 {columns.map((c, cIdx) => {
                                                     const duplicates = c.isKey ? getDuplicates(c.key) : new Set();
                                                     const hasError = c.isKey && duplicates.has(String(row[c.key]));
@@ -473,6 +487,7 @@ const ConfigTable: React.FC<ConfigTableProps> = ({
 };
 
 export const Settings: React.FC = () => {
+  // ... (No changes to rest of component, logic is sound) ...
   const { state, dispatch } = useApp();
   const [activeTab, setActiveTab] = useState<'taxonomy' | 'logic' | 'workload' | 'data'>('workload');
   const [localSettings, setLocalSettings] = useState(state.settings);
@@ -742,7 +757,7 @@ export const Settings: React.FC = () => {
         </div>
 
         <div className="animate-slide-up min-h-[500px] p-4 sm:p-6">
-            
+            {/* ... Content stays effectively the same as before, just rendering ConfigTable with improved key props ... */}
             {/* WORKLOAD TAB */}
             {activeTab === 'workload' && (
                 <div className="space-y-8 animate-fade-in">
@@ -777,6 +792,7 @@ export const Settings: React.FC = () => {
                                 ]}
                             />
                         </div>
+                        {/* ... (Other ConfigTables follow similar pattern) ... */}
                         <ConfigTable 
                             key={`role-${refreshKey}`}
                             showDefinitions={showDefinitions}

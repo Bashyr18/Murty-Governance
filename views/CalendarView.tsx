@@ -2,7 +2,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { Compute } from '../services/compute';
-import { Calendar as CalendarIcon, Clock, CheckCircle, List, Grid, ChevronLeft, ChevronRight, Briefcase, Flag, AlertTriangle, Layers, ArrowRight } from 'lucide-react';
+import { Calendar as CalendarIcon, Clock, CheckCircle, List, Grid, ChevronLeft, ChevronRight, Briefcase, Flag, AlertTriangle, Layers, ArrowRight, XCircle } from 'lucide-react';
 
 export const CalendarView: React.FC = () => {
   const { state, dispatch } = useApp();
@@ -20,6 +20,8 @@ export const CalendarView: React.FC = () => {
   }, []);
 
   // Derive events from work items
+  // We treat ISO dates (YYYY-MM-DDT...) as absolute dates for the calendar, 
+  // ignoring time components to prevent timezone shifts.
   const events = useMemo(() => {
       const all: any[] = [];
       state.workItems.forEach(w => {
@@ -66,7 +68,6 @@ export const CalendarView: React.FC = () => {
   }, [state.workItems, state.packs]);
 
   // Calendar Calculation Logic
-  const currentMonthStr = currentDate.toISOString().slice(0, 7); // YYYY-MM format
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth(); // 0-11
   
@@ -75,7 +76,7 @@ export const CalendarView: React.FC = () => {
 
   const days = Array.from({length: daysInMonth}, (_, i) => {
       const day = i + 1;
-      // Construct date string manually to avoid timezone shifting issues
+      // Construct date string manually as YYYY-MM-DD to match the events source data
       const dateStr = `${year}-${(month+1).toString().padStart(2,'0')}-${day.toString().padStart(2,'0')}`;
       return {
           day,
@@ -93,8 +94,9 @@ export const CalendarView: React.FC = () => {
       setAnimationKey(prev => prev + 1);
   };
   
-  // Strict ISO comparison for 'Today' to avoid timezone mismatches
-  const todayStr = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD in local time
+  // Use local ISO string for 'Today' to match the event date keys
+  // This ensures 'Today' highlights correctly based on user's browser day, matching the date buckets
+  const todayStr = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
 
   const getEventStyle = (e: any) => {
       if (e.type === 'project') return 'bg-[var(--ink)] text-[var(--bg)] border-[var(--ink)] shadow-md';
@@ -133,7 +135,7 @@ export const CalendarView: React.FC = () => {
                     <div className="text-sm text-[var(--inkDim)] font-mono uppercase tracking-wide">
                         {currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
                     </div>
-                    {todayStr.startsWith(currentMonthStr) && (
+                    {todayStr.startsWith(`${year}-${(month+1).toString().padStart(2,'0')}`) && (
                         <span className="px-2 py-0.5 rounded-full bg-[var(--accent)] text-[var(--bg)] text-[9px] font-bold uppercase tracking-wider animate-pulse">Current</span>
                     )}
                 </div>
@@ -258,44 +260,44 @@ export const CalendarView: React.FC = () => {
                   </div>
               </div>
           ) : (
-              <div className="flex-1 overflow-y-auto custom-scrollbar p-4 sm:p-6 space-y-8 animate-slide-up bg-[var(--surface)]/50">
+              <div className="flex-1 overflow-y-auto custom-scrollbar p-0 sm:p-6 space-y-2 sm:space-y-8 animate-slide-up bg-[var(--surface)]/50">
                   {days.filter(d => d.events.length > 0).map(d => {
                       const isToday = d.dateStr === todayStr;
-                      const dateObj = new Date(d.dateStr);
+                      const dateObj = new Date(d.dateStr); // safe because YYYY-MM-DD in constructor is local
                       return (
-                          <div key={d.dateStr} className="flex flex-col sm:flex-row gap-2 sm:gap-6 items-start sm:items-stretch group">
+                          <div key={d.dateStr} className="flex flex-col sm:flex-row gap-0 sm:gap-6 items-stretch sm:items-start group border-b border-[var(--border2)] sm:border-0 last:border-0">
                               {/* Date Column */}
-                              <div className="w-full sm:w-24 flex flex-row sm:flex-col items-center sm:items-center pt-2 shrink-0 justify-between sm:justify-start border-b sm:border-b-0 border-[var(--border2)] pb-2 sm:pb-0">
+                              <div className="w-full sm:w-24 bg-[var(--surface2)] sm:bg-transparent px-4 py-2 sm:p-0 flex flex-row sm:flex-col items-center sm:items-center justify-between sm:justify-start shrink-0 sticky top-0 sm:static z-10 sm:z-0 border-b sm:border-0 border-[var(--border)]">
                                   <div className="flex items-center gap-2 sm:flex-col">
-                                      <div className={`text-2xl sm:text-3xl font-disp font-black ${isToday ? 'text-[var(--accent)] scale-110' : 'text-[var(--ink)]'} transition-transform`}>{d.day}</div>
+                                      <div className={`text-xl sm:text-3xl font-disp font-black ${isToday ? 'text-[var(--accent)] scale-110' : 'text-[var(--ink)]'} transition-transform`}>{d.day}</div>
                                       <div className="text-xs font-mono font-bold text-[var(--inkDim)] uppercase tracking-wider">{dateObj.toLocaleString('default', { weekday: 'short' })}</div>
                                   </div>
                                   {isToday && <div className="sm:mt-2 px-2 py-0.5 bg-[var(--accent)] text-[var(--bg)] text-[9px] font-bold rounded-full uppercase">Today</div>}
                               </div>
                               
                               {/* Events Column */}
-                              <div className="flex-1 space-y-3 pb-4 sm:pb-8 sm:border-l border-[var(--border)] sm:pl-8 relative w-full">
+                              <div className="flex-1 space-y-3 p-4 sm:p-0 sm:pb-8 sm:border-l border-[var(--border)] sm:pl-8 relative w-full">
                                   <div className={`absolute -left-[5px] top-[18px] w-2.5 h-2.5 rounded-full border-2 transition-colors hidden sm:block ${isToday ? 'bg-[var(--accent)] border-[var(--accent)]' : 'bg-[var(--border)] border-[var(--bg)]'}`}></div>
                                   
                                   {d.events.map((e, idx) => (
                                       <div key={idx} 
                                         onClick={() => dispatch({ type: 'SET_VIEW', payload: { view: 'project', workId: e.workId } })}
-                                        className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 hover:border-[var(--accent)] hover:shadow-lg cursor-pointer transition-all flex items-center justify-between group/card"
+                                        className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 hover:border-[var(--accent)] hover:shadow-lg cursor-pointer transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 group/card"
                                       >
-                                          <div className="flex items-center gap-4">
-                                               <div className={`p-3 rounded-xl transition-colors ${e.type === 'project' ? 'bg-[var(--surface2)] text-[var(--ink)]' : e.type === 'milestone' ? 'bg-[rgba(0,224,112,0.1)] text-[var(--safe)]' : 'bg-[rgba(255,192,0,0.1)] text-[var(--warn)]'}`}>
+                                          <div className="flex items-start sm:items-center gap-4">
+                                               <div className={`p-3 rounded-xl transition-colors shrink-0 ${e.type === 'project' ? 'bg-[var(--surface2)] text-[var(--ink)]' : e.type === 'milestone' ? 'bg-[rgba(0,224,112,0.1)] text-[var(--safe)]' : 'bg-[rgba(255,192,0,0.1)] text-[var(--warn)]'}`}>
                                                    {e.type === 'project' ? <Briefcase size={20} /> : e.type === 'milestone' ? <Flag size={20} /> : <Clock size={20} />}
                                                </div>
-                                               <div>
-                                                   <div className="flex items-center gap-2 mb-1">
-                                                       <span className="text-[10px] font-bold font-mono uppercase text-[var(--inkDim)] tracking-wider border border-[var(--border)] px-1.5 py-0.5 rounded bg-[var(--surface2)]">{e.workName}</span>
+                                               <div className="min-w-0">
+                                                   <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                                       <span className="text-[10px] font-bold font-mono uppercase text-[var(--inkDim)] tracking-wider border border-[var(--border)] px-1.5 py-0.5 rounded bg-[var(--surface2)] truncate max-w-[150px]">{e.workName}</span>
                                                        {e.type === 'raid' && <span className="text-[9px] bg-[var(--warn)] text-black px-1.5 py-0.5 rounded font-bold uppercase shadow-sm">Due</span>}
                                                    </div>
-                                                   <div className="font-bold text-sm text-[var(--ink)] group-hover/card:text-[var(--accent)] transition-colors">{e.title}</div>
+                                                   <div className="font-bold text-sm text-[var(--ink)] group-hover/card:text-[var(--accent)] transition-colors break-words">{e.title}</div>
                                                </div>
                                           </div>
-                                          <div className="hidden sm:block opacity-0 group-hover/card:opacity-100 transition-opacity transform translate-x-2 group-hover/card:translate-x-0">
-                                              <button className="px-4 py-2 rounded-lg border border-[var(--border)] text-xs font-bold uppercase hover:bg-[var(--surface2)] transition-colors bg-[var(--bg)] flex items-center gap-2">View Details <ArrowRight size={14}/></button>
+                                          <div className="flex items-center justify-end sm:justify-start w-full sm:w-auto">
+                                              <button className="px-4 py-2 rounded-lg border border-[var(--border)] text-xs font-bold uppercase hover:bg-[var(--surface2)] transition-colors bg-[var(--bg)] flex items-center gap-2 opacity-100 sm:opacity-0 group-hover/card:opacity-100 transform sm:translate-x-2 group-hover/card:translate-x-0 w-full sm:w-auto justify-center">View <ArrowRight size={14}/></button>
                                           </div>
                                       </div>
                                   ))}
