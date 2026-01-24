@@ -7,7 +7,7 @@ export interface RoleKey { key: string; name: string; }
 export interface ProfileField { key: string; label: string; type: 'text' | 'number' | 'enum' | 'multi'; options?: string[]; default: any; }
 
 // --- WORKLOAD ENGINE CONFIGURATION TYPES ---
-export interface StageMultiplier { stage: string; multiplier: number; isCommitted: boolean; notes: string; }
+export interface StageMultiplier { lifecycleId: string; multiplier: number; isCommitted: boolean; notes: string; }
 export interface RoleWeight { role: string; weight: number; category: 'Oversight'|'DeliveryLead'|'Execution'|'PeopleManagement'|'External'; notes: string; }
 export interface DefaultAllocation { role: string; percent: number; notes: string; }
 export interface GradeCapacity { grade: string; weeklyPoints: number; maxCurrent: number; maxTotal: number; targetExecPct: number; targetOversightPct: number; budgetDetail: string; notes: string; }
@@ -43,6 +43,12 @@ export interface Templates {
   raciDecisionAreas: string[];
 }
 
+export interface GovernanceRules {
+  riskVolumeThreshold: number;
+  staleReportDaysCritical: number;
+  staleReportDaysStandard: number;
+}
+
 export interface Weights {
   // Legacy weights (kept for backward compat if needed, but largely superseded by WorkloadSettings)
   health: {
@@ -51,6 +57,7 @@ export interface Weights {
     blockedPenalty: number;
     missingRolePenalty: number;
   };
+  governance: GovernanceRules;
   reporting: {
     expectedUpdateDaysByLifecycle: Record<string, number>;
   };

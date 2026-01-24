@@ -1,6 +1,7 @@
 
 import React, { useMemo } from 'react';
 import { useApp } from '../context/AppContext';
+import { Compute } from '../services/compute';
 import { Search, Briefcase, Users, X } from 'lucide-react';
 import { ProjectCard } from './Portfolio';
 import { PersonCard } from './People';
@@ -9,6 +10,9 @@ export const GlobalSearch: React.FC = () => {
     const { state, dispatch } = useApp();
     const { search } = state.ui.filters;
     const term = search.toLowerCase();
+
+    // Calculate Workload Scores for rendering PersonCards
+    const scoresById = useMemo(() => Compute.calculateAllWorkloadScores(state), [state]);
 
     const matchedPeople = useMemo(() => {
         if (!term) return [];
@@ -70,7 +74,14 @@ export const GlobalSearch: React.FC = () => {
                 
                 {matchedPeople.length > 0 ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-                        {matchedPeople.map(p => <PersonCard key={p.id} p={p} />)}
+                        {matchedPeople.map(p => (
+                            <PersonCard 
+                                key={p.id} 
+                                p={p} 
+                                score={scoresById[p.id]}
+                                fairness={Compute.checkFairnessFromScores(p.id, state, scoresById)}
+                            />
+                        ))}
                     </div>
                 ) : (
                     <div className="p-8 border border-dashed border-[var(--border)] rounded-2xl text-center text-[var(--inkDim)] text-sm italic bg-[var(--surface)]/30">

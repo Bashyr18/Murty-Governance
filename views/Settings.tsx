@@ -605,6 +605,8 @@ export const Settings: React.FC = () => {
           } catch (err) {
               toast("Import Failed", "Invalid JSON file", "error");
           }
+          // Clear value to allow re-selection
+          event.target.value = '';
       };
       reader.readAsText(file);
   };
@@ -645,7 +647,7 @@ export const Settings: React.FC = () => {
   const checkWorkTypeUsage = (id: string) => state.workItems.some(w => w.typeId === id);
   const checkRoleUsage = (key: string) => state.workItems.some(w => w.staffing.some(s => s.roleKey === key));
 
-  const updateNestedWeight = (category: 'workload'|'health', subKey: string, finalKey: string, val: number) => {
+  const updateNestedWeight = (category: 'workload'|'health'|'governance', subKey: string, finalKey: string, val: number) => {
       const safeVal = isNaN(val) ? 0 : val;
       setLocalSettings(prev => {
           const catObj = { ...prev.weights[category] } as any;
@@ -801,10 +803,10 @@ export const Settings: React.FC = () => {
                             formula="Load *= Stage Multiplier"
                             data={localSettings.workload.stageMultipliers} 
                             onUpdate={(d) => updateWorkloadConfig('stageMultipliers', d)}
-                            onAdd={() => handleAddRow('stageMultipliers', { stage: "New Stage", multiplier: 0.5, isCommitted: false, notes: "" })}
+                            onAdd={() => handleAddRow('stageMultipliers', { lifecycleId: "L-NEW", multiplier: 0.5, isCommitted: false, notes: "" })}
                             onDelete={(i) => handleDeleteRow('stageMultipliers', i)}
                             columns={[
-                                {key:'stage', label:'Phase Name', type:'text', help: 'Must match Taxonomy > Lifecycle Phases.', isKey: true}, 
+                                {key:'lifecycleId', label:'Lifecycle ID', type:'text', help: 'Must match Taxonomy > Lifecycle IDs (e.g., L-CUR).', isKey: true}, 
                                 {key:'multiplier', label:'Probability', type:'number', help: 'Discount factor (0.0 to 1.0).', min: 0, max: 1}, 
                                 {key:'isCommitted', label:'Committed?', type:'boolean', help: 'If checked, counts towards committed load stats.'}
                             ]}
@@ -969,28 +971,78 @@ export const Settings: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* Reporting Thresholds */}
-                    <div className="p-6 rounded-3xl border border-[var(--border)] bg-[var(--card)] space-y-6">
-                        <h3 className="font-bold text-sm uppercase tracking-wide text-[var(--ink)] flex items-center gap-2">
-                            <Clock size={16} className="text-[var(--safe)]"/> Report Freshness Thresholds
-                        </h3>
-                        <p className="text-xs text-[var(--inkDim)]">Maximum allowed days since last status report before health degradation begins.</p>
-                        
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                            {Object.entries(localSettings.weights.reporting.expectedUpdateDaysByLifecycle).map(([lifecycle, days]) => (
-                                <div key={lifecycle} className="bg-[var(--surface2)] p-4 rounded-xl border border-[var(--border)] text-center">
-                                    <label className="block text-[10px] font-mono text-[var(--inkDim)] mb-2 uppercase font-bold">{lifecycle}</label>
-                                    <div className="flex items-center justify-center gap-2">
-                                        <ConfigInput 
-                                            type="number" 
-                                            value={days} 
-                                            min={1} max={90}
-                                            onChange={(v) => updateReportConfig(lifecycle, v)} 
-                                        />
-                                        <span className="text-xs font-bold text-[var(--inkDim)]">Days</span>
+                    {/* Governance Rules & Reporting Thresholds */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        {/* New Governance Rules Section */}
+                        <div className="p-6 rounded-3xl border border-[var(--border)] bg-[var(--card)] space-y-6">
+                            <h3 className="font-bold text-sm uppercase tracking-wide text-[var(--ink)] flex items-center gap-2">
+                                <Activity size={16} className="text-[var(--warn)]"/> Risk & RAG Thresholds
+                            </h3>
+                            <p className="text-xs text-[var(--inkDim)]">Thresholds that trigger Amber/Red status automatically.</p>
+                            
+                            <div className="space-y-4 pt-2">
+                                <div className="flex items-center justify-between p-3 bg-[var(--surface2)] rounded-xl border border-[var(--border)]">
+                                    <div>
+                                        <label className="block text-[10px] font-mono text-[var(--inkDim)] uppercase font-bold">Risk Volume Limit</label>
+                                        <p className="text-[9px] text-[var(--inkDim)]">Max open risks before Amber status</p>
                                     </div>
+                                    <ConfigInput 
+                                        type="number" 
+                                        value={localSettings.weights.governance?.riskVolumeThreshold ?? 5} 
+                                        min={1} max={50}
+                                        onChange={(v) => updateNestedWeight('governance', 'direct', 'riskVolumeThreshold', v)} 
+                                    />
                                 </div>
-                            ))}
+                                <div className="flex items-center justify-between p-3 bg-[var(--surface2)] rounded-xl border border-[var(--border)]">
+                                    <div>
+                                        <label className="block text-[10px] font-mono text-[var(--inkDim)] uppercase font-bold">Critical Phase Report Age</label>
+                                        <p className="text-[9px] text-[var(--inkDim)]">Days allowed without report (Active Projects)</p>
+                                    </div>
+                                    <ConfigInput 
+                                        type="number" 
+                                        value={localSettings.weights.governance?.staleReportDaysCritical ?? 7} 
+                                        min={1} max={30}
+                                        onChange={(v) => updateNestedWeight('governance', 'direct', 'staleReportDaysCritical', v)} 
+                                    />
+                                </div>
+                                <div className="flex items-center justify-between p-3 bg-[var(--surface2)] rounded-xl border border-[var(--border)]">
+                                    <div>
+                                        <label className="block text-[10px] font-mono text-[var(--inkDim)] uppercase font-bold">Standard Phase Report Age</label>
+                                        <p className="text-[9px] text-[var(--inkDim)]">Days allowed without report (Pipeline/Closed)</p>
+                                    </div>
+                                    <ConfigInput 
+                                        type="number" 
+                                        value={localSettings.weights.governance?.staleReportDaysStandard ?? 14} 
+                                        min={1} max={90}
+                                        onChange={(v) => updateNestedWeight('governance', 'direct', 'staleReportDaysStandard', v)} 
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Reporting Thresholds */}
+                        <div className="p-6 rounded-3xl border border-[var(--border)] bg-[var(--card)] space-y-6">
+                            <h3 className="font-bold text-sm uppercase tracking-wide text-[var(--ink)] flex items-center gap-2">
+                                <Clock size={16} className="text-[var(--safe)]"/> Lifecycle Expectation
+                            </h3>
+                            <p className="text-xs text-[var(--inkDim)]">Base update frequency expectation per lifecycle phase (affects health score calculation).</p>
+                            
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                {Object.entries(localSettings.weights.reporting.expectedUpdateDaysByLifecycle).map(([lifecycle, days]) => (
+                                    <div key={lifecycle} className="bg-[var(--surface2)] p-4 rounded-xl border border-[var(--border)] text-center">
+                                        <label className="block text-[10px] font-mono text-[var(--inkDim)] mb-2 uppercase font-bold">{lifecycle}</label>
+                                        <div className="flex items-center justify-center gap-2">
+                                            <ConfigInput 
+                                                type="number" 
+                                                value={days} 
+                                                min={1} max={90}
+                                                onChange={(v) => updateReportConfig(lifecycle, v)} 
+                                            />
+                                            <span className="text-xs font-bold text-[var(--inkDim)]">Days</span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     </div>
                 </div>

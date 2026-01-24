@@ -60,7 +60,16 @@ const sanitizeState = (incoming: any): AppState => {
             ...initialState.settings, 
             ...(incoming.settings || {}),
             taxonomy: { ...initialState.settings.taxonomy, ...(incoming.settings?.taxonomy || {}) },
-            workload: { ...initialState.settings.workload, ...(incoming.settings?.workload || {}) }
+            workload: { ...initialState.settings.workload, ...(incoming.settings?.workload || {}) },
+            // Deep merge weights to ensure governance rules exist even if loading legacy data
+            weights: {
+                ...initialState.settings.weights,
+                ...(incoming.settings?.weights || {}),
+                governance: {
+                    ...initialState.settings.weights.governance,
+                    ...(incoming.settings?.weights?.governance || {})
+                }
+            }
         }
     };
 
@@ -181,7 +190,10 @@ const reducer = (state: AppState, action: Action): AppState => {
         meta: { ...state.meta, updatedAt: new Date().toISOString() }
       };
     case 'ADD_COMMENT':
-        const existingPack = state.packs[action.payload.workId];
+        // Fix: Ensure pack exists before adding comment
+        const existingPack = state.packs[action.payload.workId] || { 
+            raid: [], raci: [], decisions: [], reports: [], comments: [], updatedAt: new Date().toISOString() 
+        };
         const newComment: Comment = {
             id: `C-${Date.now()}`,
             text: action.payload.text,
@@ -291,13 +303,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
+  // Debounced persistence to avoid localStorage churn on every keystroke/update
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    const handler = setTimeout(() => {
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        } catch (e) {
+            console.error("Storage limit reached or error saving:", e);
+        }
+    }, 500); // 500ms debounce
+
+    // Immediate theme update to prevent flicker
     if (state.ui.theme === 'light') {
-      document.documentElement.classList.add('light');
+        document.documentElement.classList.add('light');
     } else {
-      document.documentElement.classList.remove('light');
+        document.documentElement.classList.remove('light');
     }
+
+    return () => clearTimeout(handler);
   }, [state]);
 
   return (

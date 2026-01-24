@@ -7,10 +7,10 @@ export const STORAGE_KEY = "murty_v10_prod";
 // --- SEED DATA FROM CSVs ---
 const WORKLOAD_SETTINGS: WorkloadSettings = {
   stageMultipliers: [
-    { stage: "Current Engagements", multiplier: 1.00, isCommitted: true, notes: "Committed delivery; highest load signal" },
-    { stage: "Closed Deals", multiplier: 0.85, isCommitted: true, notes: "Near-term load; slightly discounted vs fully active delivery" },
-    { stage: "Live Proposals", multiplier: 0.55, isCommitted: true, notes: "Pipeline pressure; meaningful load but below delivery" },
-    { stage: "Engagements in Discussion", multiplier: 0.30, isCommitted: false, notes: "Early pipeline; light load signal" }
+    { lifecycleId: "L-CUR", multiplier: 1.00, isCommitted: true, notes: "Committed delivery; highest load signal" },
+    { lifecycleId: "L-CLS", multiplier: 0.85, isCommitted: true, notes: "Near-term load; slightly discounted vs fully active delivery" },
+    { lifecycleId: "L-PRO", multiplier: 0.55, isCommitted: true, notes: "Pipeline pressure; meaningful load but below delivery" },
+    { lifecycleId: "L-DIS", multiplier: 0.30, isCommitted: false, notes: "Early pipeline; light load signal" }
   ],
   roleWeights: [
     { role: "PD", weight: 2.20, category: "Oversight", notes: "High accountability; decision load; client-facing" },
@@ -554,6 +554,11 @@ export const seedV10: AppState = {
         overduePenalty: 10,
         blockedPenalty: 20,
         missingRolePenalty: 15
+      },
+      governance: {
+        riskVolumeThreshold: 5,
+        staleReportDaysCritical: 7,
+        staleReportDaysStandard: 14
       },
       reporting: {
         expectedUpdateDaysByLifecycle: { "L-CUR": 7, "L-PRO": 7, "L-DIS": 14, "L-CLS": 14 }

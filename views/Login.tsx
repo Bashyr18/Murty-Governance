@@ -106,7 +106,7 @@ export const Login: React.FC = () => {
                         </div>
                         <div>
                             <div className="font-disp font-black text-xl tracking-tight leading-none">Murty<span className="opacity-50">Gov</span></div>
-                            <div className="text-[10px] font-mono text-[var(--inkDim)] uppercase tracking-widest mt-1.5">System v1.10</div>
+                            <div className="text-[10px] font-mono text-[var(--inkDim)] uppercase tracking-widest mt-1.5">System v1.12</div>
                         </div>
                     </div>
                     <div className="flex gap-1.5">
@@ -284,7 +284,7 @@ export const Login: React.FC = () => {
             </div>
             
             <div className="p-6 text-center text-[10px] font-mono text-[var(--inkDim)] border-t border-[var(--border)] opacity-60">
-                Murty Governance System • Encrypted • v1.10
+                Murty Governance System • Encrypted • v1.12
             </div>
         </div>
     </div>

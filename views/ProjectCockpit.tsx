@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { Compute } from '../services/compute';
-import { ArrowLeft, Plus, AlertTriangle, CheckCircle, Users, Globe, Send, FilePlus, Download, Calendar as CalendarIcon, Clock, ArrowRight, ArrowDown, Save, X, Trash2, Calendar, Activity, AlertCircle, Info, MoreVertical, FileText, Lock, Shield, GripVertical, Check, Filter, MessageSquare, UserPlus, UserMinus, Timer, Settings } from 'lucide-react';
+import { ArrowLeft, Plus, AlertTriangle, CheckCircle, Users, Globe, Send, FilePlus, Download, Calendar as CalendarIcon, Clock, ArrowRight, ArrowDown, Save, X, Trash2, Calendar, Activity, AlertCircle, Info, MoreVertical, FileText, Lock, Shield, GripVertical, Check, Filter, MessageSquare, UserPlus, UserMinus, Timer, Settings, Zap, Target, HelpCircle } from 'lucide-react';
 import { openDrawer, closeDrawer } from '../components/Drawer';
 import { toast } from '../components/Toasts';
 import { RaciRow, StaffingEntry, Report, Comment, RaidItem, ReportingSchedule } from '../types';
@@ -132,67 +132,137 @@ export const ProjectCockpit: React.FC = () => {
       openDrawer({
           title: "New RAID Item",
           sub: "Register a Risk, Action, Issue, or Decision",
-          saveLabel: "Add Item",
+          saveLabel: "Create Entry",
           content: (
-              <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                      <div>
-                          <label className="block text-xs font-mono text-[var(--inkDim)] mb-1 uppercase">Type</label>
-                          <select id="raid-type" className="w-full bg-[var(--surface2)] border border-[var(--border)] rounded-lg p-2.5 text-sm outline-none">
-                              {state.settings.taxonomy.raid.types.map(t => <option key={t} value={t} className="bg-[var(--surface)] text-[var(--ink)]">{t}</option>)}
-                          </select>
-                      </div>
-                      <div>
-                          <label className="block text-xs font-mono text-[var(--inkDim)] mb-1 uppercase">Impact</label>
-                          <select id="raid-impact" className="w-full bg-[var(--surface2)] border border-[var(--border)] rounded-lg p-2.5 text-sm outline-none">
-                              {state.settings.taxonomy.raid.impact.map(t => <option key={t} value={t} className="bg-[var(--surface)] text-[var(--ink)]">{t}</option>)}
-                          </select>
-                      </div>
-                  </div>
-                   <div>
-                      <label className="block text-xs font-mono text-[var(--inkDim)] mb-1 uppercase">Title</label>
-                      <input id="raid-title" className="w-full bg-[var(--surface2)] border border-[var(--border)] rounded-lg p-2.5 text-sm outline-none" placeholder="Short summary..." />
-                  </div>
+              <div className="space-y-6">
+                  
+                  {/* Type Selection - Visual Tiles */}
                   <div>
-                      <label className="block text-xs font-mono text-[var(--inkDim)] mb-1 uppercase">Description</label>
-                      <textarea id="raid-desc" className="w-full bg-[var(--surface2)] border border-[var(--border)] rounded-lg p-2.5 text-sm h-24 outline-none" placeholder="Detailed context..."></textarea>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                      <div>
-                          <label className="block text-xs font-mono text-[var(--inkDim)] mb-1 uppercase">Owner</label>
-                          <select id="raid-owner" className="w-full bg-[var(--surface2)] border border-[var(--border)] rounded-lg p-2.5 text-sm outline-none">
-                              <option value="" className="bg-[var(--surface)] text-[var(--ink)]">-- Unassigned --</option>
-                              {state.people.map(p => <option key={p.id} value={p.id} className="bg-[var(--surface)] text-[var(--ink)]">{p.name}</option>)}
-                          </select>
+                      <label className="block text-xs font-mono text-[var(--inkDim)] mb-2 uppercase tracking-wide font-bold">Item Type</label>
+                      <div className="grid grid-cols-4 gap-2">
+                          {[
+                              { id: 'Risk', icon: AlertTriangle, color: 'text-[var(--risk)]' }, 
+                              { id: 'Issue', icon: Zap, color: 'text-[var(--warn)]' }, 
+                              { id: 'Action', icon: CheckCircle, color: 'text-[var(--safe)]' }, 
+                              { id: 'Decision', icon: Target, color: 'text-[var(--accent)]' }
+                          ].map(t => (
+                              <label key={t.id} className="cursor-pointer group">
+                                  <input type="radio" name="raid-type" value={t.id} className="peer sr-only" defaultChecked={t.id === 'Risk'} />
+                                  <div className="flex flex-col items-center justify-center p-3 rounded-xl border border-[var(--border)] bg-[var(--surface2)] peer-checked:bg-[var(--surface)] peer-checked:border-[var(--ink)] peer-checked:ring-1 peer-checked:ring-[var(--ink)] transition-all hover:bg-[var(--surface)]">
+                                      <t.icon size={20} className={`${t.color} mb-1.5`} />
+                                      <span className="text-[10px] font-bold uppercase">{t.id}</span>
+                                  </div>
+                              </label>
+                          ))}
                       </div>
-                      <div>
-                          <label className="block text-xs font-mono text-[var(--inkDim)] mb-1 uppercase">Due Date</label>
-                          <input id="raid-due" type="date" className="w-full bg-[var(--surface2)] border border-[var(--border)] rounded-lg p-2.5 text-sm outline-none" />
+                  </div>
+
+                  {/* Title Input - Prominent */}
+                  <div className="group relative">
+                      <input 
+                        id="raid-title" 
+                        className="w-full bg-transparent border-b-2 border-[var(--border)] py-2 text-lg font-bold text-[var(--ink)] focus:border-[var(--accent)] outline-none transition-colors placeholder:text-[var(--inkDim)]/40" 
+                        placeholder="What is the item?" 
+                        autoFocus
+                      />
+                      <label className="absolute right-0 top-2 text-[10px] font-mono text-[var(--inkDim)] uppercase opacity-0 group-focus-within:opacity-100 transition-opacity">Headline</label>
+                  </div>
+
+                  {/* Impact Selection - Color coded pills */}
+                  <div>
+                      <label className="block text-xs font-mono text-[var(--inkDim)] mb-2 uppercase tracking-wide font-bold">Severity Impact</label>
+                      <div className="flex gap-2">
+                          {[
+                              { id: 'High', color: 'bg-[var(--risk)]', text: 'text-[var(--risk)]' },
+                              { id: 'Medium', color: 'bg-[var(--warn)]', text: 'text-[var(--warn)]' },
+                              { id: 'Low', color: 'bg-[var(--safe)]', text: 'text-[var(--safe)]' }
+                          ].map(lvl => (
+                              <label key={lvl.id} className="cursor-pointer flex-1">
+                                  <input type="radio" name="raid-impact" value={lvl.id} className="peer sr-only" defaultChecked={lvl.id === 'Medium'} />
+                                  <div className={`
+                                      relative overflow-hidden text-center py-2.5 rounded-lg border border-[var(--border)] 
+                                      text-xs font-bold uppercase transition-all
+                                      peer-checked:border-transparent peer-checked:text-white
+                                      hover:border-[var(--inkDim)]
+                                  `}>
+                                      <div className={`absolute inset-0 opacity-0 peer-checked:opacity-100 transition-opacity ${lvl.color}`}></div>
+                                      <span className="relative z-10">{lvl.id}</span>
+                                  </div>
+                              </label>
+                          ))}
+                      </div>
+                  </div>
+
+                  {/* Description */}
+                  <div>
+                      <label className="block text-xs font-mono text-[var(--inkDim)] mb-2 uppercase tracking-wide font-bold">Context & Detail</label>
+                      <div className="relative">
+                        <textarea 
+                            id="raid-desc" 
+                            className="w-full bg-[var(--surface2)] border border-[var(--border)] rounded-xl p-4 text-sm min-h-[100px] outline-none focus:border-[var(--accent)] focus:ring-1 focus:ring-[var(--accent)] transition-all resize-none" 
+                            placeholder="Provide background, mitigation steps, or detailed outcome..."
+                        ></textarea>
+                      </div>
+                  </div>
+
+                  {/* Meta Data Grid */}
+                  <div className="grid grid-cols-2 gap-4 pt-2">
+                      <div className="space-y-1.5">
+                          <label className="block text-[10px] font-mono text-[var(--inkDim)] uppercase font-bold">Owner</label>
+                          <div className="relative">
+                              <select id="raid-owner" className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg p-2.5 pl-3 text-xs font-medium outline-none focus:border-[var(--ink)] appearance-none cursor-pointer">
+                                  <option value="">-- Unassigned --</option>
+                                  {state.people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                              </select>
+                              <div className="absolute right-3 top-2.5 pointer-events-none text-[var(--inkDim)]">
+                                  <ArrowDown size={14} />
+                              </div>
+                          </div>
+                      </div>
+                      <div className="space-y-1.5">
+                          <label className="block text-[10px] font-mono text-[var(--inkDim)] uppercase font-bold">Due Date</label>
+                          <div className="relative">
+                              <input id="raid-due" type="date" className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg p-2.5 text-xs font-medium outline-none focus:border-[var(--ink)] uppercase" />
+                              <CalendarIcon size={14} className="absolute right-3 top-2.5 pointer-events-none text-[var(--inkDim)]" />
+                          </div>
                       </div>
                   </div>
               </div>
           ),
           onSave: () => {
-              const type = getVal('raid-type');
-              const impact = getVal('raid-impact');
+              // Extract values from custom inputs
+              const typeEl = document.querySelector('input[name="raid-type"]:checked') as HTMLInputElement;
+              const type = typeEl ? typeEl.value : 'Risk';
+              
+              const impactEl = document.querySelector('input[name="raid-impact"]:checked') as HTMLInputElement;
+              const impact = impactEl ? impactEl.value : 'Medium';
+
               const title = getVal('raid-title');
               const description = getVal('raid-desc');
               const ownerId = getVal('raid-owner') || null;
               const due = getVal('raid-due') || null;
 
               if(!title) {
-                  toast("Validation Error", "Title is required", "error");
+                  toast("Validation Error", "Please provide a title for this item", "error");
                   return;
               }
 
               const newItem: RaidItem = {
                   id: `RI-${Date.now().toString().substr(-6)}`,
-                  type, impact, title, description, ownerId, due: due ? new Date(due).toISOString() : null,
-                  status: 'Open', probability: 'Medium', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+                  type, 
+                  impact, 
+                  title, 
+                  description, 
+                  ownerId, 
+                  due: due ? new Date(due).toISOString() : null,
+                  status: 'Open', 
+                  probability: 'Medium', 
+                  createdAt: new Date().toISOString(), 
+                  updatedAt: new Date().toISOString()
               };
 
               dispatch({ type: 'UPDATE_PACK', payload: { workId: wi.id, pack: { raid: [newItem, ...(pack.raid || [])] } } });
-              toast("Item Added", `${type} added to register`, "success");
+              toast("Item Created", `${type} added to register`, "success");
               closeDrawer();
           }
       });
@@ -200,41 +270,64 @@ export const ProjectCockpit: React.FC = () => {
 
   const handleEditRaid = (item: RaidItem) => {
       openDrawer({
-          title: `Edit ${item.type} ${item.id}`,
-          sub: item.title,
+          title: `Edit ${item.type}`,
+          sub: item.id,
           saveLabel: "Update Item",
           content: (
-              <div className="space-y-4">
+              <div className="space-y-6">
                    <div>
-                      <label className="block text-xs font-mono text-[var(--inkDim)] mb-1 uppercase">Status</label>
-                      <select id="raid-status" defaultValue={item.status} className="w-full bg-[var(--surface2)] border border-[var(--border)] rounded-lg p-2.5 text-sm outline-none font-bold">
-                          {state.settings.taxonomy.raid.status.map(s => <option key={s} value={s} className="bg-[var(--surface)] text-[var(--ink)]">{s}</option>)}
-                      </select>
+                      <label className="block text-xs font-mono text-[var(--inkDim)] mb-2 uppercase font-bold">Status</label>
+                      <div className="flex p-1 bg-[var(--surface2)] rounded-lg border border-[var(--border)]">
+                          {state.settings.taxonomy.raid.status.map(s => (
+                              <label key={s} className="flex-1 cursor-pointer">
+                                  <input type="radio" name="raid-status" value={s} className="peer sr-only" defaultChecked={item.status === s} />
+                                  <div className="text-center py-2 text-[10px] font-bold uppercase rounded-md text-[var(--inkDim)] peer-checked:bg-[var(--surface)] peer-checked:text-[var(--ink)] peer-checked:shadow-sm transition-all hover:text-[var(--ink)]">
+                                      {s}
+                                  </div>
+                              </label>
+                          ))}
+                      </div>
                    </div>
+
                    <div>
-                      <label className="block text-xs font-mono text-[var(--inkDim)] mb-1 uppercase">Impact</label>
-                      <select id="raid-impact" defaultValue={item.impact} className="w-full bg-[var(--surface2)] border border-[var(--border)] rounded-lg p-2.5 text-sm outline-none">
-                          {state.settings.taxonomy.raid.impact.map(t => <option key={t} value={t} className="bg-[var(--surface)] text-[var(--ink)]">{t}</option>)}
-                      </select>
+                      <label className="block text-xs font-mono text-[var(--inkDim)] mb-2 uppercase font-bold">Impact Level</label>
+                      <div className="flex gap-2">
+                          {state.settings.taxonomy.raid.impact.map(lvl => (
+                              <label key={lvl} className="cursor-pointer flex-1">
+                                  <input type="radio" name="raid-impact" value={lvl} className="peer sr-only" defaultChecked={item.impact === lvl} />
+                                  <div className={`
+                                      text-center py-2 rounded-lg border border-[var(--border)] 
+                                      text-xs font-bold uppercase transition-all
+                                      peer-checked:border-[var(--accent)] peer-checked:text-[var(--accent)] peer-checked:bg-[var(--accent)]/5
+                                      hover:bg-[var(--surface2)]
+                                  `}>
+                                      {lvl}
+                                  </div>
+                              </label>
+                          ))}
+                      </div>
                    </div>
+
                    <div>
-                      <label className="block text-xs font-mono text-[var(--inkDim)] mb-1 uppercase">Description</label>
-                      <textarea id="raid-desc" defaultValue={item.description} className="w-full bg-[var(--surface2)] border border-[var(--border)] rounded-lg p-2.5 text-sm h-24 outline-none"></textarea>
+                      <label className="block text-xs font-mono text-[var(--inkDim)] mb-2 uppercase font-bold">Description</label>
+                      <textarea id="raid-desc" defaultValue={item.description} className="w-full bg-[var(--surface2)] border border-[var(--border)] rounded-xl p-3 text-sm h-32 outline-none focus:border-[var(--accent)] resize-none"></textarea>
                    </div>
+
                    <div className="grid grid-cols-2 gap-4">
                       <div>
-                          <label className="block text-xs font-mono text-[var(--inkDim)] mb-1 uppercase">Owner</label>
-                          <select id="raid-owner" defaultValue={item.ownerId || ''} className="w-full bg-[var(--surface2)] border border-[var(--border)] rounded-lg p-2.5 text-sm outline-none">
-                              <option value="" className="bg-[var(--surface)] text-[var(--ink)]">-- Unassigned --</option>
-                              {state.people.map(p => <option key={p.id} value={p.id} className="bg-[var(--surface)] text-[var(--ink)]">{p.name}</option>)}
+                          <label className="block text-xs font-mono text-[var(--inkDim)] mb-1.5 uppercase font-bold">Owner</label>
+                          <select id="raid-owner" defaultValue={item.ownerId || ''} className="w-full bg-[var(--surface2)] border border-[var(--border)] rounded-lg p-2.5 text-xs font-medium outline-none focus:border-[var(--ink)]">
+                              <option value="">-- Unassigned --</option>
+                              {state.people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                           </select>
                       </div>
                       <div>
-                          <label className="block text-xs font-mono text-[var(--inkDim)] mb-1 uppercase">Due Date</label>
-                          <input id="raid-due" type="date" defaultValue={item.due ? item.due.split('T')[0] : ''} className="w-full bg-[var(--surface2)] border border-[var(--border)] rounded-lg p-2.5 text-sm outline-none" />
+                          <label className="block text-xs font-mono text-[var(--inkDim)] mb-1.5 uppercase font-bold">Due Date</label>
+                          <input id="raid-due" type="date" defaultValue={item.due ? item.due.split('T')[0] : ''} className="w-full bg-[var(--surface2)] border border-[var(--border)] rounded-lg p-2.5 text-xs font-medium outline-none focus:border-[var(--ink)]" />
                       </div>
                    </div>
-                   <div className="pt-4 mt-4 border-t border-[var(--border)]">
+
+                   <div className="pt-6 mt-2 border-t border-[var(--border)] flex justify-between items-center">
                        <button onClick={() => {
                            if(window.confirm("Delete this item?")) {
                                const newRaid = pack.raid.filter(r => r.id !== item.id);
@@ -242,15 +335,19 @@ export const ProjectCockpit: React.FC = () => {
                                toast("Deleted", "Item removed from register", "info");
                                closeDrawer();
                            }
-                       }} className="flex items-center gap-2 text-[var(--risk)] text-xs font-bold uppercase hover:underline">
-                           <Trash2 size={12}/> Delete Item
+                       }} className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-[var(--risk)]/10 text-[var(--risk)] text-xs font-bold uppercase transition-colors">
+                           <Trash2 size={14}/> Delete
                        </button>
                    </div>
               </div>
           ),
           onSave: () => {
-              const status = getVal('raid-status');
-              const impact = getVal('raid-impact');
+              const statusEl = document.querySelector('input[name="raid-status"]:checked') as HTMLInputElement;
+              const status = statusEl ? statusEl.value : item.status;
+
+              const impactEl = document.querySelector('input[name="raid-impact"]:checked') as HTMLInputElement;
+              const impact = impactEl ? impactEl.value : item.impact;
+
               const description = getVal('raid-desc');
               const ownerId = getVal('raid-owner') || null;
               const dueStr = getVal('raid-due');

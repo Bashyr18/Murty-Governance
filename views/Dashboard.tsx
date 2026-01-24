@@ -7,6 +7,7 @@ import { toast } from '../components/Toasts';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip as RechartsTooltip, AreaChart, Area, XAxis, YAxis, CartesianGrid, BarChart, Bar, Legend, ReferenceLine, ScatterChart, Scatter, ZAxis, ComposedChart, Line, ReferenceArea } from 'recharts';
 import { ArrowRight, AlertTriangle, Activity, ShieldAlert, Briefcase, Zap, TrendingUp, Printer, FileText, ArrowUpDown, Crosshair, Users, Info, Calendar, X, HelpCircle, ChevronDown, ChevronUp, Lightbulb, User, Layout, Globe, LayoutDashboard, Building2, Monitor, Loader2, Download, Image as ImageIcon, FileType, MoreHorizontal, FileSpreadsheet } from 'lucide-react';
 import { Avatar } from '../components/Shared';
+import { WorkloadScore } from '../types';
 
 const COLORS = {
     safe: 'var(--safe)',
@@ -34,15 +35,16 @@ const ChartCard: React.FC<{
     className?: string 
 }> = ({ title, children, data, chartId, className = "" }) => {
     const [isMenuOpen, setIsMenuOpen] = useState(false);
-    const [isExporting, setIsExporting] = useState(false);
+    const [exportType, setExportType] = useState<'png'|'csv'|null>(null);
 
     const handleExportPng = async () => {
         setIsMenuOpen(false);
-        setIsExporting(true);
+        setExportType('png');
         toast("Exporting Chart", "Generating high-res image...", "info");
-        await new Promise(resolve => setTimeout(resolve, 200)); // Render wait
-        const success = await Exporter.exportToPng(chartId, `${chartId}_${new Date().toISOString().split('T')[0]}.png`);
-        setIsExporting(false);
+        await new Promise(resolve => setTimeout(resolve, 200)); 
+        // Force minimum width of 1200px to ensure desktop layout is captured even on mobile
+        const success = await Exporter.exportToPng(chartId, `${chartId}_${new Date().toISOString().split('T')[0]}.png`, { minWidth: 1200 });
+        setExportType(null);
         if(success) toast("Download Ready", "Chart image saved", "success");
         else toast("Export Failed", "Could not generate image", "error");
     };
@@ -53,8 +55,13 @@ const ChartCard: React.FC<{
             toast("No Data", "This chart does not support data export", "warn");
             return;
         }
-        Exporter.exportToCsv(data, `${chartId}_data.csv`);
-        toast("Download Ready", "Data exported to CSV", "success");
+        setExportType('csv');
+        // Small delay to show state
+        setTimeout(() => {
+            Exporter.exportToCsv(data, `${chartId}_data.csv`);
+            toast("Download Ready", "Data exported to CSV", "success");
+            setExportType(null);
+        }, 300);
     };
 
     return (
@@ -87,8 +94,8 @@ const ChartCard: React.FC<{
                     )}
                 </div>
             </div>
-            {isExporting && (
-                <div className="absolute inset-0 bg-[var(--surface)]/50 backdrop-blur-sm z-40 flex items-center justify-center rounded-3xl">
+            {exportType === 'png' && (
+                <div className="absolute inset-0 bg-[var(--surface)]/50 backdrop-blur-sm z-40 flex items-center justify-center rounded-3xl animate-fade-in no-export">
                     <Loader2 size={32} className="animate-spin text-[var(--accent)]"/>
                 </div>
             )}
@@ -108,25 +115,27 @@ const Card: React.FC<{ children: React.ReactNode; className?: string; onClick?: 
 const ExecutiveBriefing: React.FC<{ 
     user: any, 
     healthScore: number, 
-    activeProjects: number, 
-    openRisks: number,
+    activeWorkCount: number, 
+    totalOpenRisks: number, 
+    criticalRisks: number,
     scope: 'global' | 'me',
     setScope: (s: 'global' | 'me') => void
-}> = ({ user, healthScore, activeProjects, openRisks, scope, setScope }) => {
+}> = ({ user, healthScore, activeWorkCount, totalOpenRisks, criticalRisks, scope, setScope }) => {
     
     const { dispatch, state } = useApp();
     const theme = state.ui.theme;
 
     // Navigation Helpers
     const navToActive = () => {
-        dispatch({ type: 'UPDATE_FILTER', payload: { lifecycleId: 'L-CUR', search: scope === 'me' ? user?.name : '' } });
+        dispatch({ type: 'UPDATE_FILTER', payload: { lifecycleId: null, search: scope === 'me' ? user?.name : '' } });
         dispatch({ type: 'SET_VIEW', payload: { view: 'portfolio' } });
+        toast("Work Filter", "Showing all active engagements & proposals", "info");
     };
 
     const navToRisks = () => {
         dispatch({ type: 'UPDATE_FILTER', payload: { search: scope === 'me' ? user?.name : '' } });
         dispatch({ type: 'SET_VIEW', payload: { view: 'portfolio' } });
-        toast("Risk Focus", "Filtering portfolio by risk items", "info");
+        toast("Risk Focus", "Filtering portfolio to risk items", "info");
     };
 
     // Determine status color and label
@@ -205,25 +214,28 @@ const ExecutiveBriefing: React.FC<{
                 <div className="space-y-6 max-w-3xl flex-1">
                     
                     {/* Integrated Scope Switcher */}
-                    <div className="inline-flex p-1 bg-[var(--surface2)] border border-[var(--border)] rounded-xl relative no-export shadow-sm">
+                    <div className="inline-flex p-1 bg-[var(--surfaceGlass)] backdrop-blur-md border border-[var(--border)] rounded-xl relative no-export shadow-sm">
+                        {/* Gliding Background Pill */}
                         <div 
-                            className="absolute top-1 bottom-1 bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-sm transition-all duration-300 ease-[cubic-bezier(0.23,1,0.32,1)]"
+                            className="absolute top-1 bottom-1 bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-sm transition-all duration-500 ease-[cubic-bezier(0.23,1,0.32,1)]"
                             style={{ 
-                                left: scope === 'global' ? '4px' : '50%', 
-                                width: 'calc(50% - 4px)' 
+                                left: scope === 'global' ? '4px' : 'calc(50% + 2px)', 
+                                width: 'calc(50% - 6px)' 
                             }}
                         ></div>
+                        
+                        {/* Buttons */}
                         <button 
                             onClick={() => setScope('global')}
                             className={`relative z-10 px-4 py-2 text-[11px] font-bold uppercase tracking-wider flex items-center gap-2 transition-colors w-[140px] justify-center ${scope === 'global' ? 'text-[var(--ink)]' : 'text-[var(--inkDim)] hover:text-[var(--ink)]'}`}
                         >
-                            <Globe size={14} /> Global
+                            <Globe size={14} className={scope === 'global' ? 'text-[var(--accent)] animate-pulse' : ''} /> Global
                         </button>
                         <button 
                             onClick={() => setScope('me')}
                             className={`relative z-10 px-4 py-2 text-[11px] font-bold uppercase tracking-wider flex items-center gap-2 transition-colors w-[140px] justify-center ${scope === 'me' ? 'text-[var(--ink)]' : 'text-[var(--inkDim)] hover:text-[var(--ink)]'}`}
                         >
-                            <Monitor size={14} /> My View
+                            <Monitor size={14} className={scope === 'me' ? 'text-purple-500 animate-pulse' : ''} /> My View
                         </button>
                     </div>
 
@@ -247,13 +259,13 @@ const ExecutiveBriefing: React.FC<{
                             {scope === 'global' ? (
                                 <>
                                     The firm is currently tracking at <MetricHighlight color={statusColor} label="View Health Details">{healthScore}% health</MetricHighlight>. 
-                                    There are <MetricHighlight onClick={navToActive} label="Filter Active Projects">{activeProjects} active engagements</MetricHighlight> across the portfolio, 
-                                    with <MetricHighlight onClick={navToRisks} color={openRisks > 0 ? 'var(--risk)' : 'var(--safe)'} label="View Risk Register">{openRisks} risks</MetricHighlight> requiring board attention.
+                                    There are <MetricHighlight onClick={navToActive} label="Filter Active Projects">{activeWorkCount} active initiatives</MetricHighlight> across the portfolio, 
+                                    with <MetricHighlight onClick={navToRisks} color={criticalRisks > 0 ? 'var(--risk)' : 'var(--safe)'} label="View Critical Risks">{criticalRisks} critical risks</MetricHighlight> requiring board attention.
                                 </>
                             ) : (
                                 <>
                                     Your personal portfolio is tracking at <MetricHighlight color={statusColor}>{healthScore}% health</MetricHighlight>. 
-                                    You are leading or supporting <MetricHighlight onClick={navToActive}>{activeProjects} active engagements</MetricHighlight> with <MetricHighlight color={openRisks > 0 ? 'var(--risk)' : 'var(--safe)'}>{openRisks} risks</MetricHighlight> assigned to your scope.
+                                    You are leading or supporting <MetricHighlight onClick={navToActive}>{activeWorkCount} active items</MetricHighlight> (engagements & proposals) with <MetricHighlight color={totalOpenRisks > 0 ? 'var(--warn)' : 'var(--safe)'}>{totalOpenRisks} open risks</MetricHighlight> assigned to your scope.
                                 </>
                             )}
                         </div>
@@ -272,16 +284,21 @@ const ExecutiveBriefing: React.FC<{
                                             <stop offset="0%" stopColor={statusColor} stopOpacity="0.5" />
                                             <stop offset="100%" stopColor={statusColor} stopOpacity="1" />
                                         </linearGradient>
+                                        <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+                                            <feGaussianBlur stdDeviation="2" result="blur"/>
+                                            <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+                                        </filter>
                                     </defs>
-                                    <path className={scopeStyles.gaugeTrack} d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth={scope === 'global' ? "3" : "4"} />
+                                    <path className={scopeStyles.gaugeTrack} d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth={scope === 'global' ? "3" : "4"} strokeLinecap="round" />
                                     <path 
-                                        className="transition-all duration-1000 ease-out"
+                                        className="transition-all duration-1000 ease-[cubic-bezier(0.34,1.56,0.64,1)]"
                                         strokeDasharray={`${healthScore}, 100`} 
                                         d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" 
                                         fill="none" 
                                         stroke={`url(#healthGradient-${scope})`} 
                                         strokeWidth={scope === 'global' ? "3" : "4"} 
                                         strokeLinecap="round"
+                                        filter="url(#glow)"
                                     />
                                 </svg>
                                 <div className="absolute inset-0 flex items-center justify-center flex-col">
@@ -312,8 +329,8 @@ const ExecutiveBriefing: React.FC<{
     );
 };
 
-// --- ADVANCED TEAM ANALYTICS ---
-const TeamCapacityAnalysis: React.FC<{ state: any }> = ({ state }) => {
+// ... (TeamCapacityAnalysis and IndividualLoadScatter unchanged) ...
+const TeamCapacityAnalysis: React.FC<{ state: any, scoresById: Record<string, WorkloadScore> }> = ({ state, scoresById }) => {
     const { dispatch } = useApp();
 
     const data = useMemo(() => {
@@ -325,10 +342,12 @@ const TeamCapacityAnalysis: React.FC<{ state: any }> = ({ state }) => {
 
         state.people.forEach((p: any) => {
             if (units[p.unitId]) {
-                const score = Compute.calculateWorkloadScore(p, state);
-                units[p.unitId].load += score.finalScore;
-                units[p.unitId].capacity += score.effectiveCap;
-                units[p.unitId].headcount += 1;
+                const score = scoresById[p.id];
+                if (score) {
+                    units[p.unitId].load += score.finalScore;
+                    units[p.unitId].capacity += score.effectiveCap;
+                    units[p.unitId].headcount += 1;
+                }
             }
         });
 
@@ -337,7 +356,7 @@ const TeamCapacityAnalysis: React.FC<{ state: any }> = ({ state }) => {
             utilization: u.capacity > 0 ? Math.round((u.load / u.capacity) * 100) : 0,
             avgLoad: u.headcount > 0 ? (u.load / u.headcount).toFixed(1) : 0
         }));
-    }, [state]);
+    }, [state, scoresById]);
 
     const handleBarClick = (data: any) => {
         if(data && data.activePayload && data.activePayload.length) {
@@ -375,17 +394,18 @@ const TeamCapacityAnalysis: React.FC<{ state: any }> = ({ state }) => {
                             />
                             <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{fill: 'var(--accent)', fontSize: 9}} unit="%" domain={[0, 140]} />
                             <RechartsTooltip 
-                                contentStyle={{backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', padding: '8px 12px'}}
-                                itemStyle={{fontSize: '10px', fontWeight: 500, padding: 0}}
-                                labelStyle={{color: 'var(--ink)', fontWeight: 'bold', marginBottom: '4px', borderBottom: '1px solid var(--border)', paddingBottom: '4px', fontSize: '11px'}}
+                                contentStyle={{backgroundColor: 'var(--surfaceGlass)', border: '1px solid var(--border)', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.2)', padding: '12px', backdropFilter: 'blur(10px)'}}
+                                itemStyle={{fontSize: '11px', fontWeight: 500, padding: '2px 0'}}
+                                labelStyle={{color: 'var(--ink)', fontWeight: 'bold', marginBottom: '8px', borderBottom: '1px solid var(--border)', paddingBottom: '4px', fontSize: '11px'}}
+                                cursor={{fill: 'var(--surface2)', opacity: 0.4}}
                                 formatter={(value: any, name: string) => [
                                     name === 'Utilization %' ? `${value}% (Load/Cap)` : typeof value === 'number' ? value.toFixed(1) : value,
                                     name
                                 ]}
                             />
                             <Legend iconType="circle" wrapperStyle={{fontSize: '10px', paddingTop: '10px'}} />
-                            <Bar yAxisId="left" dataKey="capacity" name="Available Capacity" fill={COLORS.capacityBar} barSize={24} radius={[4,4,0,0]} fillOpacity={0.2} cursor="pointer" />
-                            <Bar yAxisId="left" dataKey="load" name="Committed Load" fill="var(--ink)" barSize={24} radius={[4,4,0,0]} cursor="pointer" />
+                            <Bar yAxisId="left" dataKey="capacity" name="Available Capacity" fill={COLORS.capacityBar} barSize={24} radius={[4,4,0,0]} fillOpacity={0.2} cursor="pointer" animationDuration={1500} animationEasing="ease-out" />
+                            <Bar yAxisId="left" dataKey="load" name="Committed Load" fill="var(--ink)" barSize={24} radius={[4,4,0,0]} cursor="pointer" animationDuration={1500} animationEasing="ease-out" animationBegin={200}/>
                             <Line 
                                 yAxisId="right" 
                                 type="monotone" 
@@ -395,6 +415,8 @@ const TeamCapacityAnalysis: React.FC<{ state: any }> = ({ state }) => {
                                 strokeWidth={2} 
                                 dot={{r: 3, fill: 'var(--bg)', strokeWidth: 2, stroke: 'var(--accent)'}} 
                                 activeDot={{r: 5}}
+                                animationDuration={2000}
+                                animationEasing="ease-in-out"
                             />
                         </ComposedChart>
                     </ResponsiveContainer>
@@ -451,11 +473,7 @@ const TeamCapacityAnalysis: React.FC<{ state: any }> = ({ state }) => {
     );
 };
 
-// ... existing scatter and dashboard components ...
-// (Retaining existing code for scatter and main dashboard layout, only replaced TeamCapacityAnalysis and imports/helpers)
-
-// --- ADVANCED INDIVIDUAL SCATTER ---
-const IndividualLoadScatter: React.FC<{ state: any }> = ({ state }) => {
+const IndividualLoadScatter: React.FC<{ state: any, scoresById: Record<string, WorkloadScore> }> = ({ state, scoresById }) => {
     const { dispatch } = useApp();
     const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
@@ -467,7 +485,9 @@ const IndividualLoadScatter: React.FC<{ state: any }> = ({ state }) => {
 
     const data = useMemo(() => {
         return state.people.map((p: any) => {
-            const score = Compute.calculateWorkloadScore(p, state);
+            const score = scoresById[p.id];
+            if (!score) return null;
+            /* FIX: Cast roles entry value to number to ensure toFixed is available */
             const topRole = Object.entries(score.breakdown.roles).sort((a:any,b:any) => b[1] - a[1])[0];
             return {
                 id: p.id,
@@ -477,11 +497,11 @@ const IndividualLoadScatter: React.FC<{ state: any }> = ({ state }) => {
                 load: score.finalScore,
                 utilization: score.utilizationPct,
                 grade: p.grade,
-                topRole: topRole ? `${topRole[0]} (${topRole[1].toFixed(1)})` : 'None',
+                topRole: topRole ? `${topRole[0]} (${(topRole[1] as number).toFixed(1)})` : 'None',
                 breakdown: score.breakdown
             };
-        }).sort((a,b) => b.utilization - a.utilization);
-    }, [state]);
+        }).filter(Boolean).sort((a: any,b: any) => b.utilization - a.utilization);
+    }, [state, scoresById]);
 
     const redThreshold = state.settings.workload.burnoutConfig.find((c: any) => c.key === 'red_threshold')?.value || 110;
     const amberThreshold = state.settings.workload.burnoutConfig.find((c: any) => c.key === 'amber_threshold')?.value || 90;
@@ -494,7 +514,7 @@ const IndividualLoadScatter: React.FC<{ state: any }> = ({ state }) => {
                     <Crosshair size={18} className="text-[var(--risk)]"/> Burnout Matrix
                 </h3>
                 <div className="flex flex-col gap-3 h-[350px] overflow-y-auto custom-scrollbar">
-                    {data.slice(0, 8).map((d, i) => (
+                    {data.slice(0, 8).map((d: any, i: number) => (
                         <div key={d.id} onClick={() => dispatch({ type: 'SET_VIEW', payload: { view: 'person', personId: d.id }})} className="flex items-center gap-3 p-3 bg-[var(--surface2)] rounded-xl border border-transparent hover:border-[var(--accent)] transition-all active:scale-95">
                             <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-sm shrink-0 ${d.utilization > redThreshold ? 'bg-[var(--risk)]' : d.utilization > amberThreshold ? 'bg-[var(--warn)] text-black' : 'bg-[var(--safe)]'}`}>
                                 {d.utilization.toFixed(0)}%
@@ -538,9 +558,10 @@ const IndividualLoadScatter: React.FC<{ state: any }> = ({ state }) => {
                             wrapperStyle={{ zIndex: 100 }}
                             content={({ active, payload }) => {
                                 if (active && payload && payload.length) {
-                                    const d = payload[0].payload;
+                                    /* FIX: Cast tooltip payload to any to prevent unknown property access errors */
+                                    const d = payload[0].payload as any;
                                     return (
-                                        <div className="bg-[var(--surface)] border border-[var(--border)] p-4 rounded-xl shadow-xl z-50 min-w-[260px] max-w-[320px]">
+                                        <div className="bg-[var(--surfaceGlass)] backdrop-blur-md border border-[var(--border)] p-4 rounded-xl shadow-xl z-50 min-w-[260px] max-w-[320px]">
                                             <div className="flex flex-col mb-3 border-b border-[var(--border2)] pb-3">
                                                 <div className="flex justify-between items-start">
                                                     <div className="font-bold text-sm text-[var(--ink)] break-words leading-tight mr-2">{d.name}</div>
@@ -579,74 +600,58 @@ const IndividualLoadScatter: React.FC<{ state: any }> = ({ state }) => {
     );
 };
 
-// --- REAL WORKLOAD PROJECTION ENGINE ---
-const CapacityForecast: React.FC<{ state: any }> = ({ state }) => {
+// ... (CapacityForecast Code Unchanged) ...
+const CapacityForecast: React.FC<{ state: any, scoresById: Record<string, WorkloadScore> }> = ({ state, scoresById }) => {
     const { dispatch } = useApp();
     
-    // Calculate Forecast based on ACTUAL project dates (no randomization)
+    // Calculate Forecast based on ACTUAL project dates
     const { forecast, topPeople, summary } = useMemo(() => {
-        // 1. Setup Time Horizon (Next 6 Months)
         const months: any[] = [];
         const today = new Date();
-        
         for (let i = 0; i < 6; i++) {
             const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
             const monthStart = new Date(d.getFullYear(), d.getMonth(), 1);
-            const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0); // Last day of month
-            
-            months.push({ 
-                name: d.toLocaleString('default', { month: 'short' }), 
-                fullDate: d,
-                start: monthStart.getTime(), 
-                end: monthEnd.getTime()
-            });
+            const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0); 
+            months.push({ name: d.toLocaleString('default', { month: 'short' }), fullDate: d, start: monthStart.getTime(), end: monthEnd.getTime() });
         }
-
-        // 2. Identify Top 5 Busiest People (Current Load as baseline)
-        const allPeopleScores = state.people.map((p: any) => ({
-            person: p,
-            score: Compute.calculateWorkloadScore(p, state)
-        })).sort((a: any, b: any) => b.score.utilizationPct - a.score.utilizationPct);
-        
+        const allPeopleScores = state.people.map((p: any) => ({ person: p, score: scoresById[p.id] })).filter((x: any) => x.score).sort((a: any, b: any) => b.score.utilizationPct - a.score.utilizationPct);
         const topPeople = allPeopleScores.slice(0, 5).map((x: any) => x.person);
-
-        // 3. Project Load for Each Month
-        let peakLoad = 0;
+        /* FIX: Explicitly type peakLoad as number */
+        let peakLoad: number = 0;
         let peakMonth = "";
         let busiestPersonName = "";
-
         const forecastData = months.map(m => {
             const dataPoint: any = { name: m.name };
-            
             topPeople.forEach((p: any) => {
-                // Calculate projected score for this specific month
-                let monthlyScore = 0;
-                
-                // Identify which projects are active in this month window
+                const currentScoreObj = scoresById[p.id];
+                const cap = currentScoreObj?.effectiveCap || 10;
+                const mgmtLoad = currentScoreObj?.mgmtLoad || 0; 
+                const settings = state.settings.workload;
+                const gradeCap = settings.gradeCapacities.find((g: any) => g.grade === p.grade) || settings.gradeCapacities.find((g: any) => g.grade === 'Fractional');
+                const maxCurrent = gradeCap ? gradeCap.maxCurrent : 3;
+                const penCurrent = settings.burnoutConfig.find((c: any) => c.key === 'penalty_per_extra_current_item')?.value || 0.8;
                 const activeInWindow = state.workItems.filter((w: any) => {
                     const staffing = w.staffing.find((s: any) => s.personId === p.id);
                     if (!staffing) return false;
-                    
                     const start = w.startDate ? new Date(w.startDate).getTime() : 0;
                     const end = w.endDate ? new Date(w.endDate).getTime() : 0;
                     if (!start && !end) return true;
                     return (start <= m.end && end >= m.start);
                 });
-
+                let monthlyProjectPoints = 0;
+                let committedCount = 0;
                 activeInWindow.forEach((w: any) => {
                     const assignment = w.staffing.find((s: any) => s.personId === p.id);
-                    const phaseName = state.settings.taxonomy.lifecycle.find((l: any) => l.id === w.lifecycleId)?.name || "";
-                    const stageMult = state.settings.workload.stageMultipliers.find((s: any) => s.stage === phaseName)?.multiplier || 0.5;
-                    const roleWeight = state.settings.workload.roleWeights.find((r: any) => r.role === assignment.roleKey)?.weight || 1.0;
-                    const compFactor = state.settings.workload.complexityFactors.find((c: any) => c.level === (w.complexity || 3))?.factor || 1.0;
-                    const allocFactor = (assignment.allocation || 50) / 100;
-                    monthlyScore += (stageMult * roleWeight * compFactor * allocFactor);
+                    const load = Compute.calculateAssignmentLoad(assignment, w, state.settings.workload);
+                    monthlyProjectPoints += load.points;
+                    if (load.isCommitted) committedCount++;
                 });
-
-                const currentScoreObj = allPeopleScores.find((x: any) => x.person.id === p.id)?.score;
-                const cap = currentScoreObj?.effectiveCap || 10;
-                const util = (monthlyScore / cap) * 100;
-
+                let penaltyPoints = 0;
+                if (committedCount > maxCurrent) {
+                    penaltyPoints = (committedCount - maxCurrent) * penCurrent;
+                }
+                const totalMonthLoad = monthlyProjectPoints + mgmtLoad + penaltyPoints;
+                const util = (totalMonthLoad / cap) * 100;
                 dataPoint[p.code] = util;
                 if (util > peakLoad) {
                     peakLoad = util;
@@ -656,13 +661,10 @@ const CapacityForecast: React.FC<{ state: any }> = ({ state }) => {
             });
             return dataPoint;
         });
-
-        const summary = peakLoad > 100 
-            ? `Peak strain detected in ${peakMonth}, driven by ${busiestPersonName} reaching ${peakLoad.toFixed(0)}% utilization.`
-            : "Workload is projected to remain within sustainable limits over the next 6 months.";
-
+        /* FIX: Explicitly cast peakLoad to number before calling toFixed to resolve type error */
+        const summary = peakLoad > 100 ? `Peak strain detected in ${peakMonth}, driven by ${busiestPersonName} reaching ${(peakLoad as number).toFixed(0)}% utilization.` : "Workload is projected to remain within sustainable limits over the next 6 months.";
         return { forecast: forecastData, topPeople, summary };
-    }, [state]);
+    }, [state, scoresById]);
 
     const keys = topPeople.map((p:any) => p.code);
     const colorPalette = ['#0F766E', '#059669', '#D97706', '#B91C1C', '#4F46E5'];
@@ -715,13 +717,24 @@ const CapacityForecast: React.FC<{ state: any }> = ({ state }) => {
                                 <ReferenceLine y={100} stroke="var(--inkDim)" strokeDasharray="3 3" strokeOpacity={0.5} label={{ value: '100% Cap', position: 'insideTopRight', fill: 'var(--inkDim)', fontSize: 9 }} />
                                 <ReferenceArea y1={100} y2={200} fill="var(--risk)" fillOpacity={0.03} />
                                 <RechartsTooltip 
-                                    contentStyle={{backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}}
+                                    contentStyle={{backgroundColor: 'var(--surfaceGlass)', border: '1px solid var(--border)', borderRadius: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.2)', backdropFilter: 'blur(10px)', padding: '12px'}}
                                     itemStyle={{fontSize: '11px', fontWeight: 500}}
                                     labelStyle={{color: 'var(--ink)', fontWeight: 'bold', marginBottom: '8px', borderBottom: '1px solid var(--border)', paddingBottom: '4px'}}
-                                    formatter={(value: number) => [`${value.toFixed(0)}% Utilization`, '']}
+                                    formatter={(value: any) => [`${Number(value).toFixed(0)}% Utilization`, '']}
                                 />
                                 {keys.map((key: string, i: number) => (
-                                    <Area key={key} type="monotone" dataKey={key} stroke={colorPalette[i % colorPalette.length]} fillOpacity={1} fill={`url(#color${key})`} strokeWidth={2} stackId="1" />
+                                    <Area 
+                                        key={key} 
+                                        type="monotone" 
+                                        dataKey={key} 
+                                        stroke={colorPalette[i % colorPalette.length]} 
+                                        fillOpacity={1} 
+                                        fill={`url(#color${key})`} 
+                                        strokeWidth={2} 
+                                        stackId="1" 
+                                        animationDuration={1500}
+                                        animationEasing="ease-in-out"
+                                    />
                                 ))}
                             </ComposedChart>
                         </ResponsiveContainer>
@@ -729,38 +742,39 @@ const CapacityForecast: React.FC<{ state: any }> = ({ state }) => {
                 </div>
                 
                 <div className="flex flex-col pt-4 border-t border-[var(--border2)] gap-2">
-                    <div className="hidden md:flex justify-between text-[10px] uppercase font-bold text-[var(--inkDim)] mb-1 px-4">
-                        <span className="w-[40%]">Resource Profile</span>
-                        <span className="w-[40%]">Primary Driver</span>
-                        <span className="w-[20%] text-right">Load Utilization</span>
+                    {/* TABLE HEADER - Use GRID for stable export layout */}
+                    <div className="hidden md:grid grid-cols-12 gap-4 items-center text-[10px] uppercase font-black text-[var(--inkDim)] mb-1 px-4 tracking-widest h-8 border-b border-[var(--border2)]">
+                        <div className="col-span-4 truncate">Resource Profile</div>
+                        <div className="col-span-5 px-2 truncate">Primary Driver</div>
+                        <div className="col-span-3 text-right truncate">Utilization</div>
                     </div>
                     {topPeople.map((p: any, i: number) => {
-                        const score = Compute.calculateWorkloadScore(p, state);
-                        const util = score.utilizationPct;
+                        const score = scoresById[p.id];
+                        const util = score?.utilizationPct || 0;
                         const utilColor = getUtilColor(util);
                         const driver = getPrimaryDriver(p.id);
                         return (
                             <div key={p.id} onClick={() => dispatch({ type: 'SET_VIEW', payload: { view: 'person', personId: p.id }})} className="group cursor-pointer">
-                                {/* Desktop Row */}
-                                <div className="hidden md:flex items-center justify-between p-3 rounded-xl hover:bg-[var(--surface2)] border border-transparent hover:border-[var(--border)] transition-all">
-                                    <div className="flex items-center gap-3 w-[40%]">
-                                        <div className="w-9 h-9 rounded-full bg-[var(--surface)] border border-[var(--border)] flex items-center justify-center text-[10px] font-bold shadow-sm" style={{ color: colorPalette[i % colorPalette.length] }}>
+                                {/* Desktop Row - Use GRID for stable export layout */}
+                                <div className="hidden md:grid grid-cols-12 gap-4 items-center p-3 rounded-xl hover:bg-[var(--surface2)] border border-transparent hover:border-[var(--border)] transition-all h-14">
+                                    <div className="col-span-4 flex items-center gap-3 min-w-0">
+                                        <div className="w-8 h-8 rounded-lg bg-[var(--surface)] border border-[var(--border)] flex items-center justify-center text-[10px] font-black shadow-sm shrink-0" style={{ color: colorPalette[i % colorPalette.length] }}>
                                             {p.name.substring(0,2).toUpperCase()}
                                         </div>
-                                        <div className="min-w-0">
-                                            <div className="text-xs font-bold text-[var(--ink)] truncate group-hover:text-[var(--accent)] transition-colors">{p.name}</div>
-                                            <div className="text-[10px] text-[var(--inkDim)] truncate">{p.title}</div>
+                                        <div className="min-w-0 overflow-hidden">
+                                            <div className="text-[11px] font-black text-[var(--ink)] truncate group-hover:text-[var(--accent)] transition-colors leading-tight">{p.name}</div>
+                                            <div className="text-[9px] font-bold text-[var(--inkDim)] uppercase truncate tracking-tight">{p.title}</div>
                                         </div>
                                     </div>
-                                    <div className="w-[40%] px-2">
-                                        <div className="inline-flex items-center gap-2 bg-[var(--surface)] border border-[var(--border)] pl-2 pr-3 py-1 rounded-full max-w-full">
-                                            <Briefcase size={10} className="text-[var(--inkDim)] shrink-0" />
-                                            <span className="text-[10px] font-medium text-[var(--ink)] truncate">{driver}</span>
+                                    <div className="col-span-5 px-2 min-w-0">
+                                        <div className="inline-flex items-center gap-2 bg-[var(--surface)] border border-[var(--border2)] pl-2 pr-3 py-1 rounded-full max-w-full shadow-sm">
+                                            <Briefcase size={10} className="text-[var(--accent)] shrink-0" />
+                                            <span className="text-[10px] font-bold text-[var(--ink)] truncate uppercase tracking-tight">{driver}</span>
                                         </div>
                                     </div>
-                                    <div className="w-[20%] flex flex-col items-end gap-1">
-                                        <span className="text-xs font-mono font-bold" style={{ color: utilColor }}>{util.toFixed(0)}%</span>
-                                        <div className="w-24 h-1.5 bg-[var(--surface)] rounded-full overflow-hidden border border-[var(--border)]">
+                                    <div className="col-span-3 flex flex-col items-end gap-1">
+                                        <span className="text-[11px] font-mono font-black" style={{ color: utilColor }}>{util.toFixed(0)}%</span>
+                                        <div className="w-20 h-1 bg-[var(--surface)] rounded-full overflow-hidden border border-[var(--border2)]">
                                             <div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(util, 100)}%`, backgroundColor: utilColor }}></div>
                                         </div>
                                     </div>
@@ -775,7 +789,7 @@ const CapacityForecast: React.FC<{ state: any }> = ({ state }) => {
                                                 <div className="text-[10px] text-[var(--inkDim)]">{p.grade}</div>
                                             </div>
                                         </div>
-                                        <div className={`px-2 py-1 rounded-lg text-xs font-mono font-bold border ${util > 100 ? 'bg-[var(--risk)] text-white border-[var(--risk)]' : 'bg-[var(--surface)] text-[var(--ink)] border-[var(--border)]'}`}>
+                                        <div className={`px-2 py-1 rounded-lg text-xs font-mono font-bold border ${util > 100 ? 'bg-[var(--risk)] text-white border-[var(--risk)]' : 'bg-[var(--surface)] text-[var(--ink)] border border-[var(--border)]'}`}>
                                             {util.toFixed(0)}%
                                         </div>
                                     </div>
@@ -806,6 +820,9 @@ export const Dashboard: React.FC = () => {
   const [viewScope, setViewScope] = useState<'global' | 'me'>('global');
   const [isExportingGlobal, setIsExportingGlobal] = useState(false);
 
+  // Compute workload scores ONCE per dashboard render/state change
+  const scoresById = useMemo(() => Compute.calculateAllWorkloadScores(state), [state]);
+
   // Compute summary metrics based on Scope
   const metrics = useMemo(() => {
       let projects = state.workItems;
@@ -813,15 +830,25 @@ export const Dashboard: React.FC = () => {
           projects = projects.filter(w => w.staffing.some(s => s.personId === currentUser));
       }
       const totalProjects = projects.length;
-      const activeProjects = projects.filter(w => w.lifecycleId === 'L-CUR').length;
+      
+      // Calculate "Active" more broadly for the briefing text to encompass all work
+      // Include Engagements (L-CUR) and Live Proposals (L-PRO)
+      const activeWorkCount = projects.filter(w => ['L-CUR', 'L-PRO'].includes(w.lifecycleId)).length;
+      
       const finalHealth = Compute.healthScore(state, projects);
-      const openRisks = Compute.criticalRiskCount(state, projects);
+      
+      // Critical Risks (High Impact) - used for the Risk Card
+      const criticalRisks = Compute.criticalRiskCount(state, projects);
+      
+      // Total Open Risks (All Impacts) - used for the Briefing Text to avoid "0 risks" confusion
+      const totalOpenRisks = Compute.openRiskCount(state, projects);
 
       return {
           totalProjects,
-          activeProjects,
+          activeWorkCount,
           healthScore: finalHealth,
-          openRisks,
+          criticalRisks,
+          totalOpenRisks,
           freshReports: projects.filter(w => {
               const age = Compute.reportAgeDays(state, w.id);
               return age !== null && age <= 7;
@@ -831,10 +858,16 @@ export const Dashboard: React.FC = () => {
   
   const handleGlobalExport = async () => {
       setIsExportingGlobal(true);
-      toast("Generating Report", "Creating landscape dashboard PDF...", "info");
+      toast("Generating Report", "Creating high-fidelity dashboard PDF...", "info");
       // Short delay to allow UI to settle
       await new Promise(resolve => setTimeout(resolve, 500));
-      const success = await Exporter.exportToPdf('dashboard-view', `Governance_Report_${new Date().toISOString().split('T')[0]}.pdf`);
+      
+      // Determine if we should force a desktop layout width.
+      const width = window.innerWidth;
+      const minWidth = width >= 768 ? 1280 : undefined;
+
+      const success = await Exporter.exportToPdf('dashboard-view', `Governance_Report_${new Date().toISOString().split('T')[0]}.pdf`, { minWidth });
+      
       setIsExportingGlobal(false);
       if(success) toast("Export Complete", "Dashboard PDF downloaded", "success");
       else toast("Export Failed", "Could not generate file", "error");
@@ -856,7 +889,7 @@ export const Dashboard: React.FC = () => {
                 onClick={handleGlobalExport}
                 disabled={isExportingGlobal}
                 className="p-2 rounded-full bg-[var(--surface)] border border-[var(--border)] text-[var(--inkDim)] hover:text-[var(--accent)] hover:border-[var(--accent)] shadow-sm transition-all"
-                title="Export Dashboard PDF (Landscape)"
+                title="Export Dashboard PDF (High Res)"
             >
                 {isExportingGlobal ? <Loader2 size={16} className="animate-spin"/> : <Printer size={16} />}
             </button>
@@ -866,8 +899,9 @@ export const Dashboard: React.FC = () => {
         <ExecutiveBriefing 
             user={user} 
             healthScore={metrics.healthScore} 
-            activeProjects={metrics.activeProjects} 
-            openRisks={metrics.openRisks} 
+            activeWorkCount={metrics.activeWorkCount} 
+            totalOpenRisks={metrics.totalOpenRisks}
+            criticalRisks={metrics.criticalRisks}
             scope={viewScope}
             setScope={setViewScope}
         />
@@ -886,7 +920,7 @@ export const Dashboard: React.FC = () => {
             <Card className="cursor-pointer hover:border-[var(--risk)] group" onClick={() => dispatch({ type: 'SET_VIEW', payload: { view: 'portfolio' } })}>
                 <div className="flex justify-between items-start mb-3 lg:mb-4">
                     <div className="p-1.5 lg:p-2 bg-[rgba(255,59,59,0.1)] rounded-lg text-[var(--risk)] group-hover:bg-[var(--risk)] group-hover:text-white transition-colors"><ShieldAlert className="w-[18px] h-[18px] lg:w-[20px] lg:h-[20px]" /></div>
-                    <div className="px-2 py-0.5 bg-[var(--risk)] text-white text-[9px] font-bold rounded-full">{metrics.openRisks} Critical</div>
+                    <div className="px-2 py-0.5 bg-[var(--risk)] text-white text-[9px] font-bold rounded-full">{metrics.criticalRisks} Critical</div>
                 </div>
                 <div className="text-2xl lg:text-3xl font-black font-disp text-[var(--ink)] mb-1">{metrics.healthScore}%</div>
                 <div className="text-[10px] lg:text-xs font-bold uppercase text-[var(--inkDim)] tracking-wider">{viewScope === 'global' ? 'System Health' : 'My Portfolio Health'}</div>
@@ -914,12 +948,12 @@ export const Dashboard: React.FC = () => {
 
         {/* CHARTS ROW 1 */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <TeamCapacityAnalysis state={state} />
-            <IndividualLoadScatter state={state} />
+            <TeamCapacityAnalysis state={state} scoresById={scoresById} />
+            <IndividualLoadScatter state={state} scoresById={scoresById} />
         </div>
 
         {/* CHARTS ROW 2 - FORECAST */}
-        <CapacityForecast state={state} />
+        <CapacityForecast state={state} scoresById={scoresById} />
     </div>
   );
 };

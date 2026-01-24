@@ -113,17 +113,37 @@ export const Portfolio: React.FC = () => {
   const [sortConfig, setSortConfig] = useState<{key: SortField, direction: SortDirection}>({ key: 'updated', direction: 'desc' });
 
   const filtered = useMemo(() => {
+      const term = filters.search.trim().toLowerCase();
+      
       return state.workItems.filter(w => {
-        if (filters.search) {
-            const term = filters.search.toLowerCase();
-            if (!w.name.toLowerCase().includes(term) && !w.id.toLowerCase().includes(term)) return false;
+        if (term) {
+            // 1. Text Fields (ID, Name, Description)
+            const textMatch = 
+                w.name.toLowerCase().includes(term) || 
+                w.id.toLowerCase().includes(term) ||
+                w.description.toLowerCase().includes(term);
+            
+            // 2. Staffing (Internal Name & External Name)
+            const staffMatch = w.staffing.some(s => {
+                if (s.personId) {
+                    const p = state.people.find(person => person.id === s.personId);
+                    return p && p.name.toLowerCase().includes(term);
+                }
+                return s.externalName && s.externalName.toLowerCase().includes(term);
+            });
+
+            // 3. Partners
+            const partnerMatch = w.externalPartners && w.externalPartners.some(p => p.toLowerCase().includes(term));
+
+            if (!textMatch && !staffMatch && !partnerMatch) return false;
         }
+        
         if (filters.lifecycleId && w.lifecycleId !== filters.lifecycleId) return false;
         if (filters.unitId && w.teamUnitId !== filters.unitId) return false;
         if (filters.typeId && w.typeId !== filters.typeId) return false;
         return true;
       });
-  }, [state.workItems, filters]);
+  }, [state.workItems, state.people, filters]);
 
   const sorted = useMemo(() => {
       return [...filtered].sort((a, b) => {
@@ -229,7 +249,7 @@ export const Portfolio: React.FC = () => {
                     <input 
                         value={filters.search}
                         onChange={(e) => dispatch({ type: 'UPDATE_FILTER', payload: { search: e.target.value } })}
-                        placeholder="Search projects, IDs, or partners..."
+                        placeholder="Search projects, people, or partners..."
                         className="w-full bg-transparent border-none rounded-xl py-3 pl-9 pr-3 text-sm focus:ring-0 focus:bg-[var(--surface2)] transition-colors placeholder:text-[var(--inkDim)]"
                     />
                 </div>

@@ -69,7 +69,7 @@ export const Sidebar: React.FC = () => {
                     <h1 className="font-disp font-bold text-2xl leading-none text-[var(--ink)] tracking-tight group-hover:text-[var(--accent)] transition-colors duration-300 lowercase">murty</h1>
                     <div className="flex items-center gap-1.5 mt-1">
                         <div className="h-0.5 w-3 bg-[var(--accent)] rounded-full"></div>
-                        <span className="font-mono text-[9px] text-[var(--inkDim)] uppercase tracking-widest group-hover:text-[var(--ink)] transition-colors">Governance Cockpit v1.10</span>
+                        <span className="font-mono text-[9px] text-[var(--inkDim)] uppercase tracking-widest group-hover:text-[var(--ink)] transition-colors">Governance Cockpit v1.12</span>
                     </div>
                 </div>
             )}

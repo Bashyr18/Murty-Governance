@@ -5,62 +5,66 @@ import { jsPDF } from 'jspdf';
 export const Exporter = {
     /**
      * Captures a DOM element, handling scrollable content by cloning and expanding it.
+     * Special handling for SVGs to ensure they render correctly (Recharts).
      */
-    async capture(elementId: string, options: { scale?: number, padding?: number } = {}) {
+    async capture(elementId: string, options: { scale?: number, padding?: number, minWidth?: number } = {}) {
         const originalElement = document.getElementById(elementId);
         if (!originalElement) {
             console.error(`Export error: Element #${elementId} not found`);
             return null;
         }
 
-        // 1. Create a container for the clone that is IN THE VIEWPORT but hidden behind everything
-        // Browsers optimize out elements that are too far off-screen (like top: -10000px), causing blank canvases.
+        // 1. Get accurate dimensions from the original
+        const rect = originalElement.getBoundingClientRect();
+        const width = originalElement.scrollWidth || rect.width;
+        const height = originalElement.scrollHeight || rect.height;
+
+        // 2. Create a container for the clone hidden from view
         const container = document.createElement('div');
         container.style.position = 'fixed';
-        container.style.top = '0';
-        container.style.left = '0';
-        container.style.zIndex = '-9999'; // Hidden behind app
-        container.style.opacity = '1'; // Must be visible to renderer
-        container.style.pointerEvents = 'none';
-        container.style.background = '#ffffff'; // Force white background context
-        
-        // Match dimensions strictly to prevent collapse
-        const rect = originalElement.getBoundingClientRect();
-        container.style.width = `${rect.width}px`;
-        container.style.height = `${rect.height}px`;
+        container.style.top = '-10000px';
+        container.style.left = '-10000px';
+        container.style.zIndex = '-1000';
+        // Force the container to be large enough
+        container.style.width = `${width + (options.padding || 0) * 2}px`;
+        container.style.height = `${height + (options.padding || 0) * 2}px`;
         
         document.body.appendChild(container);
 
-        // 2. Deep clone the element
+        // 3. Deep clone
         const clonedElement = originalElement.cloneNode(true) as HTMLElement;
         
-        // 3. Force expansion of scrollable areas in the clone
-        // We set specific styles to ensure it renders exactly as seen or expanded
-        clonedElement.style.height = 'auto';
-        clonedElement.style.minHeight = `${rect.height}px`;
-        clonedElement.style.width = '100%';
-        clonedElement.style.overflow = 'visible';
-        clonedElement.style.margin = '0';
-        
-        // Explicit background to prevent transparent/black PNGs
-        const computedStyle = window.getComputedStyle(originalElement);
-        if (computedStyle.backgroundColor === 'rgba(0, 0, 0, 0)' || computedStyle.backgroundColor === 'transparent') {
-             // Fallback to theme background if transparent
-             clonedElement.style.backgroundColor = getComputedStyle(document.body).getPropertyValue('--bg');
-        }
+        // 4. CRITICAL FIX: Explicitly size SVGs in the clone based on original computed layout
+        const originalSvgs = originalElement.querySelectorAll('svg');
+        const clonedSvgs = clonedElement.querySelectorAll('svg');
 
-        // Handle Recharts/SVG specific sizing issues
-        // SVGs inside flex containers often collapse in clones if they don't have explicit sizes
-        const svgs = clonedElement.querySelectorAll('svg');
-        svgs.forEach(svg => {
-            const parent = svg.parentElement;
-            if (parent) {
-                svg.setAttribute('width', `${parent.offsetWidth}`);
-                svg.setAttribute('height', `${parent.offsetHeight}`);
+        originalSvgs.forEach((orig, index) => {
+            const clone = clonedSvgs[index];
+            if (clone) {
+                const origRect = orig.getBoundingClientRect();
+                const origComputed = window.getComputedStyle(orig);
+                
+                clone.setAttribute('width', `${origRect.width}`);
+                clone.setAttribute('height', `${origRect.height}`);
+                clone.style.width = `${origRect.width}px`;
+                clone.style.height = `${origRect.height}px`;
+                clone.style.display = origComputed.display;
+                clone.style.overflow = 'visible'; 
             }
         });
 
-        // Handle scrollables
+        // 5. Styles for the cloned wrapper
+        clonedElement.style.width = `${width}px`;
+        clonedElement.style.height = 'auto'; 
+        clonedElement.style.minHeight = `${height}px`;
+        clonedElement.style.margin = '0';
+        clonedElement.style.transform = 'none';
+        
+        const computedStyle = window.getComputedStyle(originalElement);
+        if (computedStyle.backgroundColor === 'rgba(0, 0, 0, 0)' || computedStyle.backgroundColor === 'transparent') {
+             clonedElement.style.backgroundColor = getComputedStyle(document.body).getPropertyValue('--bg');
+        }
+
         const scrollables = clonedElement.querySelectorAll('.overflow-auto, .overflow-y-auto, .overflow-x-auto, .custom-scrollbar');
         scrollables.forEach((el: any) => {
             el.style.height = 'auto';
@@ -68,11 +72,9 @@ export const Exporter = {
             el.style.maxHeight = 'none';
         });
 
-        // Remove elements marked as no-export
         const toRemove = clonedElement.querySelectorAll('.no-export');
         toRemove.forEach(el => el.remove());
 
-        // Add padding if requested (for clean chart exports)
         if (options.padding) {
             clonedElement.style.padding = `${options.padding}px`;
             clonedElement.style.boxSizing = 'border-box';
@@ -80,27 +82,28 @@ export const Exporter = {
 
         container.appendChild(clonedElement);
 
-        // 4. Wait for styles/fonts/images to settle
         await document.fonts.ready;
-        // Short delay to allow DOM paint
-        await new Promise(resolve => setTimeout(resolve, 300));
+        await new Promise(resolve => setTimeout(resolve, 200));
 
         try {
-            // 5. Capture the CLONED element
+            // 7. Capture
             const canvas = await html2canvas(clonedElement, {
-                scale: options.scale || 2, // High DPI
+                scale: options.scale || 3, // High Res
                 useCORS: true,
                 logging: false,
-                backgroundColor: null, // Allow transparency (we handled bg on element)
-                width: clonedElement.offsetWidth,
-                height: clonedElement.offsetHeight,
-                scrollX: 0,
-                scrollY: 0,
-                windowWidth: document.documentElement.offsetWidth,
-                windowHeight: document.documentElement.offsetHeight
+                backgroundColor: null,
+                width: container.offsetWidth,
+                height: container.offsetHeight,
+                // CRITICAL FIX: Force a large window width so Tailwind desktop breakpoints (md:) are used 
+                // in the clone regardless of the user's actual screen width.
+                windowWidth: options.minWidth || 1440, 
+                windowHeight: 1080,
+                onclone: (doc) => {
+                    const el = doc.getElementById(elementId);
+                    if(el) el.style.width = `${width}px`;
+                }
             });
 
-            // Clean up
             document.body.removeChild(container);
             return canvas;
 
@@ -111,20 +114,17 @@ export const Exporter = {
         }
     },
 
-    async exportToPdf(elementId: string, fileName: string = 'export.pdf') {
+    async exportToPdf(elementId: string, fileName: string = 'export.pdf', options: { minWidth?: number } = {}) {
         try {
-            // Lower scale for full page PDF to avoid massive file size/crash
-            const canvas = await this.capture(elementId, { scale: 1.5 }); 
+            const canvas = await this.capture(elementId, { scale: 2, minWidth: options.minWidth }); 
             if (!canvas) return false;
 
             const imgData = canvas.toDataURL('image/jpeg', 0.95);
             const imgWidth = canvas.width;
             const imgHeight = canvas.height;
             
-            // Landscape orientation by default
-            // Create PDF with custom page size matching the content perfectly
             const pdf = new jsPDF({ 
-                orientation: 'landscape', 
+                orientation: imgWidth > imgHeight ? 'landscape' : 'portrait', 
                 unit: 'px', 
                 format: [imgWidth, imgHeight] 
             });
@@ -138,9 +138,9 @@ export const Exporter = {
         }
     },
 
-    async exportToPng(elementId: string, fileName: string = 'export.png') {
+    async exportToPng(elementId: string, fileName: string = 'export.png', options: { minWidth?: number } = {}) {
         try {
-            const canvas = await this.capture(elementId, { scale: 3, padding: 40 }); 
+            const canvas = await this.capture(elementId, { scale: 3, padding: 20, minWidth: options.minWidth }); 
             if (!canvas) return false;
             
             const link = document.createElement('a');
@@ -158,23 +158,16 @@ export const Exporter = {
         if (!data || !data.length) return false;
         
         try {
-            // Extract headers
             const headers = Object.keys(data[0]);
-            
-            // Map rows
             const csvRows = data.map(row => 
                 headers.map(fieldName => {
                     const val = row[fieldName];
                     const stringVal = val === null || val === undefined ? '' : String(val);
-                    // Escape quotes and wrap in quotes if contains comma
                     return `"${stringVal.replace(/"/g, '""')}"`;
                 }).join(',')
             );
             
-            // Combine
             const csvContent = [headers.join(','), ...csvRows].join('\n');
-            
-            // Download
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement('a');
             const url = URL.createObjectURL(blob);
