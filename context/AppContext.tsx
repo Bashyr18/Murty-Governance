@@ -73,15 +73,30 @@ const sanitizeState = (incoming: any): AppState => {
         }
     };
 
-    // Ensure Arrays exist (prevent .map is not a function errors)
+    // Ensure Top-Level Arrays exist
     if (!Array.isArray(safeState.people)) safeState.people = [];
     if (!Array.isArray(safeState.workItems)) safeState.workItems = [];
     if (!safeState.packs || typeof safeState.packs !== 'object') safeState.packs = {};
     if (!Array.isArray(safeState.audit)) safeState.audit = [];
-    
-    // Ensure critical nested arrays
     if (!Array.isArray(safeState.ui.history)) safeState.ui.history = [];
     if (!Array.isArray(safeState.settings.workloadHistory)) safeState.settings.workloadHistory = [];
+
+    // DEEP SANITIZATION: Protect against array access on undefined properties in entities
+    safeState.workItems = safeState.workItems.map(w => ({
+        ...w,
+        staffing: Array.isArray(w.staffing) ? w.staffing : [],
+        externalPartners: Array.isArray(w.externalPartners) ? w.externalPartners : []
+    }));
+
+    safeState.people = safeState.people.map(p => ({
+        ...p,
+        profile: {
+            ...p.profile,
+            skills: Array.isArray(p.profile?.skills) ? p.profile.skills : [],
+            directReports: Array.isArray(p.profile?.directReports) ? p.profile.directReports : [],
+            recurringRoles: Array.isArray(p.profile?.recurringRoles) ? p.profile.recurringRoles : []
+        }
+    }));
 
     return safeState;
 };
