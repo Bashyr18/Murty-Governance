@@ -13,6 +13,11 @@ export const Exporter = {
         // Capture dimensions directly from the element's current state
         const width = element.scrollWidth;
         const height = element.scrollHeight;
+        
+        // Capture the viewport dimensions to ensure media queries resolve correctly (Desktop vs Mobile)
+        // If we use 'width' (element width) as windowWidth, a small card will trigger mobile styles.
+        const viewportWidth = window.innerWidth; 
+        const viewportHeight = window.innerHeight;
 
         // Detect current theme background to ensure no transparent artifacts
         const bodyStyle = window.getComputedStyle(document.body);
@@ -56,10 +61,10 @@ export const Exporter = {
                 scale: options.scale || 2,
                 useCORS: true,
                 logging: false,
-                width: width,
+                width: width, // The dimension of the output canvas
                 height: height,
-                windowWidth: width,
-                windowHeight: height,
+                windowWidth: viewportWidth, // CRITICAL: Ensure media queries resolve against the full viewport, not the element width
+                windowHeight: viewportHeight,
                 backgroundColor: bgColor // Explicitly set background color
             });
             document.body.removeChild(container);
