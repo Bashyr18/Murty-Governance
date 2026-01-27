@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { Compute } from '../services/compute';
 import { ArrowLeft, Save, Briefcase, Network, Activity, Zap, Users, Shield, Clock, Award, AlertTriangle, Edit2, X, Check, Info, Mail, Hash, Calendar, Phone, HelpCircle } from 'lucide-react';
@@ -132,6 +132,9 @@ export const PersonProfile: React.FC = () => {
       }
   }, [person, isEditing]);
 
+  // Compute workload scores for the current state to facilitate fairness analysis
+  const scoresById = useMemo(() => Compute.calculateAllWorkloadScores(state), [state]);
+
   if (!person) return <div>Person not found</div>;
 
   const handleSave = (e: React.FormEvent) => {
@@ -168,7 +171,9 @@ export const PersonProfile: React.FC = () => {
   };
   const score = Compute.calculateWorkloadScore(tempPerson, state);
   const riskColor = score.risk === 'Red' ? 'var(--risk)' : score.risk === 'Amber' ? 'var(--warn)' : 'var(--safe)';
-  const fairness = Compute.checkFairness(person.id, state);
+  
+  // Use the correct Compute helper method for fairness checks
+  const fairness = Compute.checkFairnessFromScores(person.id, state, scoresById);
 
   // Data for Donut chart
   const donutValue = Math.min(score.utilizationPct, 100);
@@ -436,11 +441,11 @@ export const PersonProfile: React.FC = () => {
                                      <div className="text-[11px] text-[var(--inkDim)] mt-0.5">{Compute.lifecycleName(state, w.lifecycleId)}</div>
                                  </div>
                                  <span className="font-mono text-[10px] font-bold uppercase bg-[var(--bg)] border border-[var(--border)] px-2 py-1 rounded text-[var(--ink)]">
-                                     {w.staffing.find(s => s.personId === person.id)?.roleKey}
+                                     {w.staffing.find(s => person && s.personId === person.id)?.roleKey}
                                  </span>
                              </div>
                          ))}
-                         {state.workItems.filter(w => w.staffing.some(s => s.personId === person.id)).length === 0 && (
+                         {state.workItems.filter(w => person && w.staffing.some(s => s.personId === person.id)).length === 0 && (
                              <div className="text-sm text-[var(--inkDim)] italic p-4 text-center">No active assignments found.</div>
                          )}
                      </div>
@@ -521,14 +526,14 @@ export const PersonProfile: React.FC = () => {
                                     <select name="formalManager" defaultValue={person.formalManagerId || ''} className="w-full bg-[var(--surface2)] border border-[var(--border)] rounded-xl p-3 text-sm outline-none focus:border-[var(--accent)]">
                                         <option value="">-- None --</option>
                                         <option value="Board">Board</option>
-                                        {state.people.filter(p => p.id !== person.id).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                        {state.people.filter(p => person && p.id !== person.id).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                                     </select>
                                 </div>
                                 <div>
                                     <label className="block text-[10px] font-mono text-[var(--inkDim)] mb-1.5 uppercase">Functional Manager (Dotted)</label>
                                     <select name="dottedManager" defaultValue={person.dottedManagerId || ''} className="w-full bg-[var(--surface2)] border border-[var(--border)] rounded-xl p-3 text-sm outline-none focus:border-[var(--accent)]">
                                         <option value="">-- None --</option>
-                                        {state.people.filter(p => p.id !== person.id).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                        {state.people.filter(p => person && p.id !== person.id).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                                     </select>
                                 </div>
                             </div>
