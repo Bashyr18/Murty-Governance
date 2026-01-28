@@ -243,6 +243,13 @@ export interface AppState {
   audit: AuditLog[];
 }
 
+// --- CONTEXT TYPE ---
+export interface AppContextProps {
+  state: AppState;
+  dispatch: React.Dispatch<any>;
+  lastSaveTime: Date | null;
+}
+
 // --- COMPUTED TYPES ---
 export interface WorkloadScore {
   personId: string;

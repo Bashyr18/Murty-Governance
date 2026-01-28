@@ -1,7 +1,9 @@
 
-import React, { createContext, useContext, useEffect, useReducer } from 'react';
-import { AppState, Person, WorkItem, Pack, RaidItem, Decision, RaciRow, Report, Comment, AuditLog, WorkloadSettings, AppSettings } from '../types';
+import React, { createContext, useContext, useEffect, useReducer, useState } from 'react';
+import { AppState, Person, WorkItem, Pack, RaidItem, Decision, RaciRow, Report, Comment, AuditLog, WorkloadSettings, AppSettings, AppContextProps } from '../types';
 import { seedV10, STORAGE_KEY } from '../constants';
+
+const MAX_AUDIT_LOGS = 500;
 
 type Action =
   | { type: 'SET_VIEW'; payload: { view: string; workId?: string; personId?: string } }
@@ -164,7 +166,7 @@ const reducer = (state: AppState, action: Action): AppState => {
         ...state,
         people: state.people.map(p => p.id === action.payload.id ? action.payload : p),
         meta: { ...state.meta, updatedAt: new Date().toISOString() },
-        audit: [...state.audit, createAudit(state.ui.currentUser || 'SYS', 'Person', action.payload.id, 'UPDATE', {})]
+        audit: [...state.audit, createAudit(state.ui.currentUser || 'SYS', 'Person', action.payload.id, 'UPDATE', {})].slice(-MAX_AUDIT_LOGS)
       };
     case 'ADD_PERSON':
       const newPerson = { ...action.payload };
@@ -174,14 +176,14 @@ const reducer = (state: AppState, action: Action): AppState => {
         ...state,
         people: [newPerson, ...state.people],
         meta: { ...state.meta, updatedAt: new Date().toISOString() },
-        audit: [...state.audit, createAudit(state.ui.currentUser || 'SYS', 'Person', action.payload.id, 'CREATE', {})]
+        audit: [...state.audit, createAudit(state.ui.currentUser || 'SYS', 'Person', action.payload.id, 'CREATE', {})].slice(-MAX_AUDIT_LOGS)
       };
     case 'UPDATE_WORK':
       return {
         ...state,
         workItems: state.workItems.map(w => w.id === action.payload.id ? action.payload : w),
         meta: { ...state.meta, updatedAt: new Date().toISOString() },
-        audit: [...state.audit, createAudit(state.ui.currentUser || 'SYS', 'Work', action.payload.id, 'UPDATE', {})]
+        audit: [...state.audit, createAudit(state.ui.currentUser || 'SYS', 'Work', action.payload.id, 'UPDATE', {})].slice(-MAX_AUDIT_LOGS)
       };
     case 'ADD_WORK':
       const newPack: Pack = { raid: [], raci: [], decisions: [], reports: [], comments: [], updatedAt: new Date().toISOString() };
@@ -193,7 +195,7 @@ const reducer = (state: AppState, action: Action): AppState => {
         workItems: [newWork, ...state.workItems],
         packs: { ...state.packs, [action.payload.id]: newPack },
         meta: { ...state.meta, updatedAt: new Date().toISOString() },
-        audit: [...state.audit, createAudit(state.ui.currentUser || 'SYS', 'Work', action.payload.id, 'CREATE', {})]
+        audit: [...state.audit, createAudit(state.ui.currentUser || 'SYS', 'Work', action.payload.id, 'CREATE', {})].slice(-MAX_AUDIT_LOGS)
       };
     case 'UPDATE_PACK':
       return {
@@ -256,7 +258,7 @@ const reducer = (state: AppState, action: Action): AppState => {
         return {
             ...state,
             settings: { ...state.settings, ...action.payload },
-            audit: [...state.audit, createAudit(state.ui.currentUser || 'SYS', 'Settings', 'Global', 'UPDATE', {})]
+            audit: [...state.audit, createAudit(state.ui.currentUser || 'SYS', 'Settings', 'Global', 'UPDATE', {})].slice(-MAX_AUDIT_LOGS)
         };
     case 'UPDATE_WORKLOAD_SETTINGS':
         const newVersionEntry = {
@@ -274,7 +276,7 @@ const reducer = (state: AppState, action: Action): AppState => {
                 ...action.payload.fullSettings,
                 workloadHistory: updatedHistory
             },
-            audit: [...state.audit, createAudit(state.ui.currentUser || 'SYS', 'Settings', 'Workload', 'UPDATE', action.payload.diff)]
+            audit: [...state.audit, createAudit(state.ui.currentUser || 'SYS', 'Settings', 'Workload', 'UPDATE', action.payload.diff)].slice(-MAX_AUDIT_LOGS)
         };
     case 'RESTORE_WORKLOAD_VERSION':
         const restoreVersionEntry = {
@@ -293,21 +295,22 @@ const reducer = (state: AppState, action: Action): AppState => {
                 workload: action.payload,
                 workloadHistory: restoreHistory
             },
-            audit: [...state.audit, createAudit(state.ui.currentUser || 'SYS', 'Settings', 'Workload', 'RESTORE', {})]
+            audit: [...state.audit, createAudit(state.ui.currentUser || 'SYS', 'Settings', 'Workload', 'RESTORE', {})].slice(-MAX_AUDIT_LOGS)
         };
     default:
       return state;
   }
 };
 
-interface AppContextProps {
-  state: AppState;
-  dispatch: React.Dispatch<Action>;
-}
-
-const AppContext = createContext<AppContextProps>({ state: initialState, dispatch: () => null });
+const AppContext = createContext<AppContextProps>({ 
+    state: initialState, 
+    dispatch: () => null,
+    lastSaveTime: null
+});
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [lastSaveTime, setLastSaveTime] = useState<Date | null>(null);
+  
   const [state, dispatch] = useReducer(reducer, initialState, (initial) => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
@@ -323,6 +326,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const handler = setTimeout(() => {
         try {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+            setLastSaveTime(new Date()); // Update timestamp on successful save
         } catch (e) {
             console.error("Storage limit reached or error saving:", e);
         }
@@ -339,7 +343,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [state]);
 
   return (
-    <AppContext.Provider value={{ state, dispatch }}>
+    <AppContext.Provider value={{ state, dispatch, lastSaveTime }}>
       {children}
     </AppContext.Provider>
   );

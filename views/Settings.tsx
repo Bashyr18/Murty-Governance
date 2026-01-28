@@ -487,8 +487,7 @@ const ConfigTable: React.FC<ConfigTableProps> = ({
 };
 
 export const Settings: React.FC = () => {
-  // ... (No changes to rest of component, logic is sound) ...
-  const { state, dispatch } = useApp();
+  const { state, dispatch, lastSaveTime } = useApp();
   const [activeTab, setActiveTab] = useState<'taxonomy' | 'logic' | 'workload' | 'data'>('workload');
   const [localSettings, setLocalSettings] = useState(state.settings);
   const [hasChanges, setHasChanges] = useState(false);
@@ -601,7 +600,7 @@ export const Settings: React.FC = () => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `murty_backup_${new Date().toISOString().split('T')[0]}.json`;
+      a.download = `murty_backup_${new Date().toISOString().replace(/[:.]/g,'-')}.json`;
       a.click();
       toast("Backup Downloaded", "Store this file securely", "success");
   };
@@ -613,12 +612,19 @@ export const Settings: React.FC = () => {
       reader.onload = (e) => {
           try {
               const json = JSON.parse(e.target?.result as string);
-              if (window.confirm("Restore this data? This will overwrite current state.")) {
+              
+              // Enhanced Validation logic
+              if (json.meta && json.meta.schemaVersion !== state.meta.schemaVersion) {
+                  const msg = `Version Mismatch: Backup is v${json.meta?.schemaVersion || 'Unknown'}, System is v${state.meta.schemaVersion}. Import anyway?`;
+                  if (!window.confirm(msg)) return;
+              }
+
+              if (window.confirm("Restore this data? This will overwrite ALL current state (People, Projects, Config).")) {
                   dispatch({ type: 'RESET_STATE', payload: json });
                   toast("System Restored", "Data loaded from backup file", "success");
               }
           } catch (err) {
-              toast("Import Failed", "Invalid JSON file", "error");
+              toast("Import Failed", "Invalid JSON file structure", "error");
           }
           // Clear value to allow re-selection
           event.target.value = '';
@@ -757,7 +763,7 @@ export const Settings: React.FC = () => {
         </div>
 
         <div className="animate-slide-up min-h-[500px] p-4 sm:p-6">
-            {/* ... Content stays effectively the same as before, just rendering ConfigTable with improved key props ... */}
+            
             {/* WORKLOAD TAB */}
             {activeTab === 'workload' && (
                 <div className="space-y-8 animate-fade-in">
@@ -1132,7 +1138,15 @@ export const Settings: React.FC = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {/* Backup / Restore */}
                         <div className="p-6 rounded-3xl border border-[var(--border)] bg-[var(--card)] shadow-sm">
-                            <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><HardDrive size={20} className="text-[var(--accent)]"/> Backup & Restore</h3>
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="font-bold text-lg flex items-center gap-2"><HardDrive size={20} className="text-[var(--accent)]"/> Backup & Restore</h3>
+                                {lastSaveTime && (
+                                    <div className="text-[10px] font-mono text-[var(--inkDim)] bg-[var(--surface2)] px-2 py-1 rounded flex items-center gap-1.5 animate-fade-in">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-[var(--safe)] animate-pulse"></div>
+                                        Saved: {lastSaveTime.toLocaleTimeString()}
+                                    </div>
+                                )}
+                            </div>
                             <p className="text-xs text-[var(--inkDim)] mb-6 leading-relaxed">Save a complete snapshot of the system state (People, Projects, Config) to a JSON file.</p>
                             <div className="flex gap-3">
                                  <button onClick={handleBackup} className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-[var(--surface2)] border border-[var(--border)] rounded-xl text-xs font-bold uppercase hover:bg-[var(--accent)] hover:text-[var(--bg)] transition-colors">

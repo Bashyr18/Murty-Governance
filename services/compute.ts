@@ -432,6 +432,37 @@ export const Compute = {
       return AccessLevel.Tier3_Operational;
   },
 
+  searchMatchesWork(state: AppState, w: WorkItem, term: string): boolean {
+      if (!term) return true;
+      const lowerTerm = term.toLowerCase();
+      
+      // 1. Core fields
+      if (w.name.toLowerCase().includes(lowerTerm)) return true;
+      if (w.id.toLowerCase().includes(lowerTerm)) return true;
+      if (w.description.toLowerCase().includes(lowerTerm)) return true;
+
+      // 2. Staffing
+      if (w.staffing.some(s => {
+          if (s.personId) {
+              const p = state.people.find(person => person.id === s.personId);
+              return p && p.name.toLowerCase().includes(lowerTerm);
+          }
+          return s.externalName && s.externalName.toLowerCase().includes(lowerTerm);
+      })) return true;
+
+      // 3. Partners
+      if (w.externalPartners && w.externalPartners.some(p => p.toLowerCase().includes(lowerTerm))) return true;
+
+      // 4. Check RAID Items
+      const pack = state.packs[w.id];
+      if (pack && pack.raid && pack.raid.some(r => 
+          r.title.toLowerCase().includes(lowerTerm) || 
+          r.description.toLowerCase().includes(lowerTerm)
+      )) return true;
+
+      return false;
+  },
+
   // --- DATA DIAGNOSTICS ---
   runDiagnostics(state: AppState) {
       const issues: string[] = [];
