@@ -42,7 +42,8 @@ const ChartCard: React.FC<{
         setExportType('png');
         toast("Exporting Chart", "Generating high-res image...", "info");
         await new Promise(resolve => setTimeout(resolve, 200)); 
-        const success = await Exporter.exportToPng(chartId, `${chartId}_${new Date().toISOString().split('T')[0]}.png`);
+        // Force minimum width of 1200px to ensure desktop layout is captured even on mobile
+        const success = await Exporter.exportToPng(chartId, `${chartId}_${new Date().toISOString().split('T')[0]}.png`, { minWidth: 1200 });
         setExportType(null);
         if(success) toast("Download Ready", "Chart image saved", "success");
         else toast("Export Failed", "Could not generate image", "error");
@@ -110,6 +111,7 @@ const Card: React.FC<{ children: React.ReactNode; className?: string; onClick?: 
   </div>
 );
 
+// --- EXECUTIVE BRIEFING COMPONENT ---
 const ExecutiveBriefing: React.FC<{ 
     user: any, 
     healthScore: number, 
@@ -180,7 +182,7 @@ const ExecutiveBriefing: React.FC<{
                 containerBorder: 'border-purple-500/30',
                 containerBg: 'bg-purple-500/5',
                 meshColor: '#a855f7', // Purple-500
-                gaugeBg: 'bg-[var(--surfaceGlass)]',
+                gaugeBg: 'bg-[var(--surfaceGlass)]', // Ensure readable on light mode
                 gaugeBorder: 'border-purple-500/30',
                 gaugeTrack: 'text-purple-500/10',
                 labelColor: 'text-purple-500',
@@ -327,7 +329,7 @@ const ExecutiveBriefing: React.FC<{
     );
 };
 
-// ... (TeamCapacityAnalysis unchanged) ...
+// ... (TeamCapacityAnalysis and IndividualLoadScatter unchanged) ...
 const TeamCapacityAnalysis: React.FC<{ state: any, scoresById: Record<string, WorkloadScore> }> = ({ state, scoresById }) => {
     const { dispatch } = useApp();
 
@@ -473,7 +475,13 @@ const TeamCapacityAnalysis: React.FC<{ state: any, scoresById: Record<string, Wo
 
 const IndividualLoadScatter: React.FC<{ state: any, scoresById: Record<string, WorkloadScore> }> = ({ state, scoresById }) => {
     const { dispatch } = useApp();
-    // Removed isMobile state check to ensure both views are rendered (one hidden) for export purposes
+    const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+    useEffect(() => {
+        const handleResize = () => setIsMobile(window.innerWidth < 768);
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
 
     const data = useMemo(() => {
         return state.people.map((p: any) => {
@@ -498,6 +506,32 @@ const IndividualLoadScatter: React.FC<{ state: any, scoresById: Record<string, W
     const redThreshold = state.settings.workload.burnoutConfig.find((c: any) => c.key === 'red_threshold')?.value || 110;
     const amberThreshold = state.settings.workload.burnoutConfig.find((c: any) => c.key === 'amber_threshold')?.value || 90;
 
+    // Mobile View: Top Risk List
+    if (isMobile) {
+        return (
+            <div id="burnout-chart" className="p-6 rounded-3xl border border-[var(--border)] bg-[var(--card)] shadow-sm">
+                <h3 className="font-bold text-lg text-[var(--ink)] flex items-center gap-2 mb-6">
+                    <Crosshair size={18} className="text-[var(--risk)]"/> Burnout Matrix
+                </h3>
+                <div className="flex flex-col gap-3 h-[350px] overflow-y-auto custom-scrollbar">
+                    {data.slice(0, 8).map((d: any, i: number) => (
+                        <div key={d.id} onClick={() => dispatch({ type: 'SET_VIEW', payload: { view: 'person', personId: d.id }})} className="flex items-center gap-3 p-3 bg-[var(--surface2)] rounded-xl border border-transparent hover:border-[var(--accent)] transition-all active:scale-95">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-sm shrink-0 ${d.utilization > redThreshold ? 'bg-[var(--risk)]' : d.utilization > amberThreshold ? 'bg-[var(--warn)] text-black' : 'bg-[var(--safe)]'}`}>
+                                {d.utilization.toFixed(0)}%
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <div className="font-bold text-sm text-[var(--ink)] truncate">{d.name}</div>
+                                <div className="text-[10px] text-[var(--inkDim)] truncate">{d.grade} • {d.unit}</div>
+                            </div>
+                            <ChevronDown size={14} className="-rotate-90 text-[var(--inkDim)]"/>
+                        </div>
+                    ))}
+                    <div className="text-center text-[10px] text-[var(--inkDim)] pt-2 italic">Showing top 8 busiest</div>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <ChartCard 
             chartId="burnout-chart"
@@ -508,8 +542,7 @@ const IndividualLoadScatter: React.FC<{ state: any, scoresById: Record<string, W
             }
             data={data}
         >
-            {/* DESKTOP VIEW: Chart (Hidden on mobile via CSS, but exists for Export) */}
-            <div className="hidden md:block h-[350px] w-full relative">
+            <div className="h-[350px] w-full relative">
                 <ResponsiveContainer width="100%" height="100%">
                     <ScatterChart margin={{top: 20, right: 20, bottom: 20, left: 10}}>
                         <CartesianGrid strokeDasharray="3 3" stroke="var(--border2)" />
@@ -563,33 +596,12 @@ const IndividualLoadScatter: React.FC<{ state: any, scoresById: Record<string, W
                     </ScatterChart>
                 </ResponsiveContainer>
             </div>
-
-            {/* MOBILE VIEW: Top Risk List (Visible only on mobile) */}
-            <div className="md:hidden flex flex-col gap-3 h-[350px] overflow-y-auto custom-scrollbar">
-                {data.slice(0, 8).map((d: any, i: number) => (
-                    <div key={d.id} onClick={() => dispatch({ type: 'SET_VIEW', payload: { view: 'person', personId: d.id }})} className="flex items-center gap-3 p-3 bg-[var(--surface2)] rounded-xl border border-transparent hover:border-[var(--accent)] transition-all active:scale-95">
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-sm shrink-0 ${d.utilization > redThreshold ? 'bg-[var(--risk)]' : d.utilization > amberThreshold ? 'bg-[var(--warn)] text-black' : 'bg-[var(--safe)]'}`}>
-                            {d.utilization.toFixed(0)}%
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <div className="font-bold text-sm text-[var(--ink)] truncate">{d.name}</div>
-                            <div className="text-[10px] text-[var(--inkDim)] truncate">{d.grade} • {d.unit}</div>
-                        </div>
-                        <ChevronDown size={14} className="-rotate-90 text-[var(--inkDim)]"/>
-                    </div>
-                ))}
-                <div className="text-center text-[10px] text-[var(--inkDim)] pt-2 italic">Showing top 8 busiest</div>
-            </div>
         </ChartCard>
     );
 };
 
-// ... (CapacityForecast and Dashboard component remain largely unchanged, assuming CapacityForecast uses responsive Tailwind classes) ...
-// CapacityForecast does use responsive classes like `hidden md:grid`, so it is safe.
-
+// ... (CapacityForecast Code Unchanged) ...
 const CapacityForecast: React.FC<{ state: any, scoresById: Record<string, WorkloadScore> }> = ({ state, scoresById }) => {
-    // ... (No logic changes needed inside CapacityForecast as long as it returns CSS-hidden desktop structure) ...
-    // Re-pasting for context integrity
     const { dispatch } = useApp();
     
     // Calculate Forecast based on ACTUAL project dates
@@ -850,7 +862,11 @@ export const Dashboard: React.FC = () => {
       // Short delay to allow UI to settle
       await new Promise(resolve => setTimeout(resolve, 500));
       
-      const success = await Exporter.exportToPdf('dashboard-view', `Governance_Report_${new Date().toISOString().split('T')[0]}.pdf`);
+      // Determine if we should force a desktop layout width.
+      const width = window.innerWidth;
+      const minWidth = width >= 768 ? 1280 : undefined;
+
+      const success = await Exporter.exportToPdf('dashboard-view', `Governance_Report_${new Date().toISOString().split('T')[0]}.pdf`, { minWidth });
       
       setIsExportingGlobal(false);
       if(success) toast("Export Complete", "Dashboard PDF downloaded", "success");

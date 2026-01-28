@@ -3,94 +3,130 @@ import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 
 export const Exporter = {
-    async capture(elementId: string, options: { scale?: number } = {}) {
-        const element = document.getElementById(elementId);
-        if (!element) {
+    /**
+     * Captures a DOM element, handling scrollable content by cloning and expanding it.
+     * Special handling for SVGs to ensure they render correctly (Recharts).
+     */
+    async capture(elementId: string, options: { scale?: number, padding?: number, minWidth?: number } = {}) {
+        const originalElement = document.getElementById(elementId);
+        if (!originalElement) {
             console.error(`Export error: Element #${elementId} not found`);
             return null;
         }
 
-        // Capture dimensions directly from the element's current state
-        const width = element.scrollWidth;
-        const height = element.scrollHeight;
-        
-        // Capture the viewport dimensions to ensure media queries resolve correctly (Desktop vs Mobile)
-        // If we use 'width' (element width) as windowWidth, a small card will trigger mobile styles.
-        const viewportWidth = window.innerWidth; 
-        const viewportHeight = window.innerHeight;
+        // 1. Get accurate dimensions from the original
+        const rect = originalElement.getBoundingClientRect();
+        const width = originalElement.scrollWidth || rect.width;
+        const height = originalElement.scrollHeight || rect.height;
 
-        // Detect current theme background to ensure no transparent artifacts
-        const bodyStyle = window.getComputedStyle(document.body);
-        const bgColor = bodyStyle.backgroundColor || '#ffffff';
-
-        // Create a clone container off-screen
+        // 2. Create a container for the clone hidden from view
         const container = document.createElement('div');
-        container.style.position = 'absolute';
-        container.style.top = '-9999px';
-        container.style.left = '-9999px';
-        container.style.width = `${width}px`;
+        container.style.position = 'fixed';
+        container.style.top = '-10000px';
+        container.style.left = '-10000px';
+        container.style.zIndex = '-1000';
+        // Force the container to be large enough
+        container.style.width = `${width + (options.padding || 0) * 2}px`;
+        container.style.height = `${height + (options.padding || 0) * 2}px`;
+        
         document.body.appendChild(container);
 
-        // Deep clone the element
-        const clone = element.cloneNode(true) as HTMLElement;
-        clone.style.width = `${width}px`;
-        clone.style.height = `${height}px`;
-        clone.style.transform = 'none';
-        clone.style.margin = '0';
-        clone.style.backgroundColor = bgColor; // Force opaque background
+        // 3. Deep clone
+        const clonedElement = originalElement.cloneNode(true) as HTMLElement;
         
-        // Remove UI elements marked as no-export
-        const toRemove = clone.querySelectorAll('.no-export');
-        toRemove.forEach(el => el.remove());
+        // 4. CRITICAL FIX: Explicitly size SVGs in the clone based on original computed layout
+        const originalSvgs = originalElement.querySelectorAll('svg');
+        const clonedSvgs = clonedElement.querySelectorAll('svg');
 
-        // Flatten glassmorphism for cleaner export (optional but recommended for canvas consistency)
-        const glassElements = clone.querySelectorAll('.backdrop-blur-md, .backdrop-blur-xl');
-        glassElements.forEach((el: any) => {
-            el.style.backdropFilter = 'none';
-            el.style.background = getComputedStyle(el).backgroundColor; // Fallback to computed color
+        originalSvgs.forEach((orig, index) => {
+            const clone = clonedSvgs[index];
+            if (clone) {
+                const origRect = orig.getBoundingClientRect();
+                const origComputed = window.getComputedStyle(orig);
+                
+                clone.setAttribute('width', `${origRect.width}`);
+                clone.setAttribute('height', `${origRect.height}`);
+                clone.style.width = `${origRect.width}px`;
+                clone.style.height = `${origRect.height}px`;
+                clone.style.display = origComputed.display;
+                clone.style.overflow = 'visible'; 
+            }
         });
 
-        container.appendChild(clone);
+        // 5. Styles for the cloned wrapper
+        clonedElement.style.width = `${width}px`;
+        clonedElement.style.height = 'auto'; 
+        clonedElement.style.minHeight = `${height}px`;
+        clonedElement.style.margin = '0';
+        clonedElement.style.transform = 'none';
+        
+        const computedStyle = window.getComputedStyle(originalElement);
+        if (computedStyle.backgroundColor === 'rgba(0, 0, 0, 0)' || computedStyle.backgroundColor === 'transparent') {
+             clonedElement.style.backgroundColor = getComputedStyle(document.body).getPropertyValue('--bg');
+        }
 
-        // Small delay to allow layout/fonts to settle in the clone
+        const scrollables = clonedElement.querySelectorAll('.overflow-auto, .overflow-y-auto, .overflow-x-auto, .custom-scrollbar');
+        scrollables.forEach((el: any) => {
+            el.style.height = 'auto';
+            el.style.overflow = 'visible';
+            el.style.maxHeight = 'none';
+        });
+
+        const toRemove = clonedElement.querySelectorAll('.no-export');
+        toRemove.forEach(el => el.remove());
+
+        if (options.padding) {
+            clonedElement.style.padding = `${options.padding}px`;
+            clonedElement.style.boxSizing = 'border-box';
+        }
+
+        container.appendChild(clonedElement);
+
         await document.fonts.ready;
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise(resolve => setTimeout(resolve, 200));
 
         try {
-            const canvas = await html2canvas(clone, {
-                scale: options.scale || 2,
+            // 7. Capture
+            const canvas = await html2canvas(clonedElement, {
+                scale: options.scale || 3, // High Res
                 useCORS: true,
                 logging: false,
-                width: width, // The dimension of the output canvas
-                height: height,
-                windowWidth: viewportWidth, // CRITICAL: Ensure media queries resolve against the full viewport, not the element width
-                windowHeight: viewportHeight,
-                backgroundColor: bgColor // Explicitly set background color
+                backgroundColor: null,
+                width: container.offsetWidth,
+                height: container.offsetHeight,
+                // CRITICAL FIX: Force a large window width so Tailwind desktop breakpoints (md:) are used 
+                // in the clone regardless of the user's actual screen width.
+                windowWidth: options.minWidth || 1440, 
+                windowHeight: 1080,
+                onclone: (doc) => {
+                    const el = doc.getElementById(elementId);
+                    if(el) el.style.width = `${width}px`;
+                }
             });
+
             document.body.removeChild(container);
             return canvas;
-        } catch (e) {
-            console.error("Export capture failed", e);
-            if (document.body.contains(container)) document.body.removeChild(container);
+
+        } catch (err) {
+            console.error('Export capture failed:', err);
+            if(document.body.contains(container)) document.body.removeChild(container);
             return null;
         }
     },
 
-    async exportToPdf(elementId: string, fileName: string = 'report.pdf') {
+    async exportToPdf(elementId: string, fileName: string = 'export.pdf', options: { minWidth?: number } = {}) {
         try {
-            const canvas = await this.capture(elementId, { scale: 2 });
+            const canvas = await this.capture(elementId, { scale: 2, minWidth: options.minWidth }); 
             if (!canvas) return false;
 
             const imgData = canvas.toDataURL('image/jpeg', 0.95);
             const imgWidth = canvas.width;
             const imgHeight = canvas.height;
             
-            // Create PDF matching the image dimensions exactly (Single Page / Long Scroll)
-            // This prevents "stretching" to fit A4 paper
-            const pdf = new jsPDF({
-                orientation: imgWidth > imgHeight ? 'landscape' : 'portrait',
-                unit: 'px',
-                format: [imgWidth, imgHeight]
+            const pdf = new jsPDF({ 
+                orientation: imgWidth > imgHeight ? 'landscape' : 'portrait', 
+                unit: 'px', 
+                format: [imgWidth, imgHeight] 
             });
 
             pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, imgHeight);
@@ -102,9 +138,9 @@ export const Exporter = {
         }
     },
 
-    async exportToPng(elementId: string, fileName: string = 'chart.png') {
+    async exportToPng(elementId: string, fileName: string = 'export.png', options: { minWidth?: number } = {}) {
         try {
-            const canvas = await this.capture(elementId, { scale: 3 });
+            const canvas = await this.capture(elementId, { scale: 3, padding: 20, minWidth: options.minWidth }); 
             if (!canvas) return false;
             
             const link = document.createElement('a');
@@ -120,6 +156,7 @@ export const Exporter = {
 
     exportToCsv(data: any[], fileName: string) {
         if (!data || !data.length) return false;
+        
         try {
             const headers = Object.keys(data[0]);
             const csvRows = data.map(row => 
@@ -129,6 +166,7 @@ export const Exporter = {
                     return `"${stringVal.replace(/"/g, '""')}"`;
                 }).join(',')
             );
+            
             const csvContent = [headers.join(','), ...csvRows].join('\n');
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement('a');

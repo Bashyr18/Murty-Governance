@@ -2,9 +2,6 @@
 import { AppState, WorkItem, Person, Report, RaidItem, AccessLevel, WorkloadScore, WorkloadSettings, StaffingEntry } from '../types';
 
 export const Compute = {
-  // Cache for workload scores to prevent redundant math during a single render pass
-  _scoreCache: new Map<string, WorkloadScore>(),
-
   // --- Taxonomy Helpers ---
   unitName(state: AppState, unitId: string) {
     const u = state.settings.taxonomy.units.find(u => u.id === unitId);
@@ -36,13 +33,36 @@ export const Compute = {
   lastReport(state: AppState, workId: string): Report | null {
     const pack = state.packs[workId];
     if (!pack || !pack.reports || !pack.reports.length) return null;
-    return pack.reports[0]; 
+    const sorted = [...pack.reports].sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime());
+    return sorted[0];
   },
   reportAgeDays(state: AppState, workId: string): number | null {
     const r = this.lastReport(state, workId);
     if (!r) return null;
     const ms = Date.now() - new Date(r.ts).getTime();
     return Math.floor(ms / (1000 * 60 * 60 * 24));
+  },
+  reportingCompliance(state: AppState) {
+    const cfg = state.settings.weights.reporting.expectedUpdateDaysByLifecycle;
+    let compliant = 0, nonCompliant = 0, missing = 0;
+    const detail: { id: string; reason: string }[] = [];
+    
+    for (const wi of state.workItems) {
+      const exp = cfg[wi.lifecycleId] ?? 14;
+      const age = this.reportAgeDays(state, wi.id);
+      
+      if (age === null) {
+        missing++;
+        nonCompliant++;
+        detail.push({ id: wi.id, reason: "Missing report" });
+      } else if (age <= exp) {
+        compliant++;
+      } else {
+        nonCompliant++;
+        detail.push({ id: wi.id, reason: `Report age ${age}d (Limit: ${exp}d)` });
+      }
+    }
+    return { total: state.workItems.length, compliant, nonCompliant, missing, detail };
   },
 
   // --- RAID Helpers ---
@@ -63,182 +83,394 @@ export const Compute = {
     for (const wi of items) {
       const pack = state.packs[wi.id];
       if (pack?.raid) {
+          // Count only High Impact risks that are Open or Blocked
           c += pack.raid.filter(r => r.type === "Risk" && r.impact === "High" && r.status !== "Closed").length;
       }
     }
     return c;
   },
-
-  // --- Search Depth Extension ---
-  searchMatchesWork(state: AppState, w: WorkItem, term: string): boolean {
-    const t = term.toLowerCase();
-    // Basic fields
-    if (w.name.toLowerCase().includes(t) || w.id.toLowerCase().includes(t) || w.description.toLowerCase().includes(t)) return true;
-    
-    // RAID content search (Audit Finding: Blindspot)
-    const pack = state.packs[w.id];
-    if (pack?.raid?.some(r => r.title.toLowerCase().includes(t) || r.description.toLowerCase().includes(t))) return true;
-
-    // Staff names
-    if (w.staffing.some(s => {
-      if (s.personId) {
-        const p = state.people.find(x => x.id === s.personId);
-        return p && p.name.toLowerCase().includes(t);
+  risksByImpact(state: AppState) {
+    const out: Record<string, number> = { High: 0, Medium: 0, Low: 0 };
+    for (const wi of state.workItems) {
+      const pack = state.packs[wi.id];
+      if (pack?.raid) {
+          for (const r of pack.raid) {
+            if (r.type !== "Risk" || r.status === "Closed") continue;
+            out[r.impact] = (out[r.impact] || 0) + 1;
+          }
       }
-      return s.externalName?.toLowerCase().includes(t);
-    })) return true;
-
-    return false;
+    }
+    return out;
   },
 
-  // --- WORKLOAD ENGINE ---
+  // --- NEW WORKLOAD ENGINE ---
+  
+  // Reusable core math for a single assignment
   calculateAssignmentLoad(
       assignment: StaffingEntry, 
       workItem: WorkItem, 
       settings: WorkloadSettings
   ): { points: number, isCommitted: boolean, roleCategory: string } {
-      const stageSetting = settings.stageMultipliers.find((s: any) => s.lifecycleId === workItem.lifecycleId);
-      const stageMult = stageSetting ? stageSetting.multiplier : 0.3;
+      // Stage Multiplier - Looks up by lifecycleId
+      // Fallback to legacy 'stage' property if 'lifecycleId' missing (backward compatibility)
+      const stageSetting = settings.stageMultipliers.find((s: any) => s.lifecycleId === workItem.lifecycleId || s.stage === workItem.lifecycleId);
+      const stageMult = stageSetting ? stageSetting.multiplier : 0.5;
       const isCommitted = stageSetting ? stageSetting.isCommitted : false;
 
+      // Role Weight
       const roleSetting = settings.roleWeights.find((r: any) => r.role === assignment.roleKey);
       const roleWeight = roleSetting ? roleSetting.weight : 1.0;
       const roleCategory = roleSetting ? roleSetting.category : 'Execution';
 
+      // Complexity Factor
       const compSetting = settings.complexityFactors.find((c: any) => c.level === (workItem.complexity || 3));
       const compFactor = compSetting ? compSetting.factor : 1.0;
 
+      // Allocation Factor
       let allocPct = assignment.allocation;
       if (allocPct === undefined) {
           const defAlloc = settings.defaultAllocations.find((d: any) => d.role === assignment.roleKey);
           allocPct = defAlloc ? defAlloc.percent : 50;
       }
-      
-      const points = stageMult * roleWeight * compFactor * (allocPct / 100);
+      const allocFactor = allocPct / 100;
+
+      // Formula
+      const points = stageMult * roleWeight * compFactor * allocFactor;
+
       return { points, isCommitted, roleCategory };
   },
 
+  // Calculates detailed scores for every person based on new rules
   calculateWorkloadScore(person: Person, state: AppState): WorkloadScore {
-    const cacheKey = `${person.id}-${state.meta.updatedAt}`;
-    if (this._scoreCache.has(cacheKey)) return this._scoreCache.get(cacheKey)!;
-
     const settings = state.settings.workload;
-    const gradeCap = settings.gradeCapacities.find(g => g.grade === person.grade) || settings.gradeCapacities[0];
-    const mod = person.profile.capacityModifier !== undefined ? person.profile.capacityModifier : 10;
-    const effectiveCap = gradeCap.weeklyPoints * (mod / 10);
+    
+    // 1. Get Grade Capacity Base
+    // Safe Fallback: If 'Fractional' or specific grade is missing, use a generic default to prevent crash
+    const defaultGrade = { weeklyPoints: 5.0, maxCurrent: 3, maxTotal: 5, targetExecPct: 50, targetOversightPct: 50, notes: "Fallback", budgetDetail: "" };
+    const gradeCap = settings.gradeCapacities.find(g => g.grade === person.grade) 
+                  || settings.gradeCapacities.find(g => g.grade === 'Fractional')
+                  || defaultGrade;
+                  
+    const gradeCapBase = gradeCap.weeklyPoints;
 
-    let committedLoad = 0, pipelineLoad = 0, committedItems = 0, totalItems = 0;
+    // 2. Calculate Effective Capacity (Mod / 10)
+    // Default to 10 if missing
+    const mod = person.profile.capacityModifier !== undefined ? person.profile.capacityModifier : 10;
+    const effectiveCap = gradeCapBase * (mod / 10);
+
+    let committedLoad = 0;
+    let pipelineLoad = 0;
+    let committedItems = 0;
+    let totalItems = 0;
     const rolePoints: Record<string, number> = { Oversight: 0, DeliveryLead: 0, Execution: 0, PeopleManagement: 0 };
 
+    // 3. Process Assignments
     state.workItems.forEach(wi => {
+        // Data Integrity Check: Ensure assignment points to this valid person
         const assignment = wi.staffing.find(s => s.personId === person.id);
         if(!assignment) return;
-        const res = this.calculateAssignmentLoad(assignment, wi, settings);
-        if(res.isCommitted) { committedLoad += res.points; committedItems++; }
-        else { pipelineLoad += res.points; }
+
+        // Use unified calculation
+        const result = this.calculateAssignmentLoad(assignment, wi, settings);
+
+        // Aggregation
+        if(result.isCommitted) {
+            committedLoad += result.points;
+            committedItems++;
+        } else {
+            pipelineLoad += result.points;
+        }
         totalItems++;
-        rolePoints[res.roleCategory] = (rolePoints[res.roleCategory] || 0) + res.points;
+        
+        // Role Breakdown (Commit + Pipeline)
+        rolePoints[result.roleCategory] = (rolePoints[result.roleCategory] || 0) + result.points;
     });
 
-    const penCurrent = settings.burnoutConfig.find(c => c.key === 'penalty_per_extra_current_item')?.value || 0;
-    const penTotal = settings.burnoutConfig.find(c => c.key === 'penalty_per_extra_total_item')?.value || 0;
-    
+    // 4. Calculate Penalties (Concurrency)
     let penaltyPoints = 0;
-    if (committedItems > gradeCap.maxCurrent) penaltyPoints += (committedItems - gradeCap.maxCurrent) * penCurrent;
-    if (totalItems > gradeCap.maxTotal) penaltyPoints += (totalItems - gradeCap.maxTotal) * penTotal;
+    
+    // Config values
+    const penCurrent = settings.burnoutConfig.find((c: any) => c.key === 'penalty_per_extra_current_item')?.value || 0.8;
+    const penTotal = settings.burnoutConfig.find((c: any) => c.key === 'penalty_per_extra_total_item')?.value || 0.4;
+    
+    if (committedItems > gradeCap.maxCurrent) {
+        penaltyPoints += (committedItems - gradeCap.maxCurrent) * penCurrent;
+    }
+    if (totalItems > gradeCap.maxTotal) {
+        penaltyPoints += (totalItems - gradeCap.maxTotal) * penTotal;
+    }
 
-    const reports = state.people.filter(p => p.formalManagerId === person.id).length;
-    const penMgmt = settings.burnoutConfig.find(c => c.key === 'per_direct_report_weight')?.value || 0;
-    const mgmtLoad = reports * penMgmt;
+    // 5. Management Load
+    // Filter direct reports to ensure they actually exist in state (prevent zombie load)
+    // Fallback: If no direct reports listed, check if they are listed as formal manager for anyone
+    let validReports = (person.profile.directReports || []).filter((rid: string) => state.people.some((p: any) => p.id === rid));
+    
+    if (validReports.length === 0) {
+        validReports = state.people.filter(p => p.formalManagerId === person.id).map(p => p.id);
+    }
 
-    const finalScore = committedLoad + pipelineLoad + penaltyPoints + mgmtLoad;
+    const reportCount = validReports.length;
+    const penMgmt = settings.burnoutConfig.find((c: any) => c.key === 'per_direct_report_weight')?.value || 0.25;
+    const mgmtLoad = reportCount * penMgmt;
+
+    // 6. Final Score & Utilization
+    const totalLoad = committedLoad + pipelineLoad;
+    const finalScore = totalLoad + penaltyPoints + mgmtLoad;
+    
+    // Utilization % - Guard against divide by zero
     const utilPct = effectiveCap > 0 ? (finalScore / effectiveCap) * 100 : 0;
 
-    const amberThresh = settings.burnoutConfig.find(c => c.key === 'amber_threshold')?.value || 100;
-    const redThresh = settings.burnoutConfig.find(c => c.key === 'red_threshold')?.value || 120;
+    // 7. Determine Risk Band
+    const amberThresh = settings.burnoutConfig.find((c: any) => c.key === 'amber_threshold')?.value || 100;
+    const redThresh = settings.burnoutConfig.find((c: any) => c.key === 'red_threshold')?.value || 120;
 
-    const score = {
-        personId: person.id, gradeCapBase: gradeCap.weeklyPoints, effectiveCap, committedLoad,
-        pipelineLoad, totalLoad: committedLoad + pipelineLoad, penaltyPoints, mgmtLoad, finalScore,
-        utilizationPct: utilPct, risk: (utilPct >= redThresh ? 'Red' : utilPct >= amberThresh ? 'Amber' : 'Green') as any,
-        breakdown: { items: totalItems, committedItems, concurrencyPenalty: penaltyPoints, roles: rolePoints }
+    let risk: 'Green' | 'Amber' | 'Red' = 'Green';
+    if (utilPct >= redThresh) risk = 'Red';
+    else if (utilPct >= amberThresh) risk = 'Amber';
+
+    return {
+        personId: person.id,
+        gradeCapBase,
+        effectiveCap,
+        committedLoad,
+        pipelineLoad,
+        totalLoad,
+        penaltyPoints,
+        mgmtLoad,
+        finalScore,
+        utilizationPct: utilPct,
+        risk,
+        breakdown: {
+            items: totalItems,
+            committedItems,
+            concurrencyPenalty: penaltyPoints,
+            roles: rolePoints
+        }
     };
-    
-    this._scoreCache.set(cacheKey, score);
-    return score;
   },
 
+  // Bulk calculation for performance
   calculateAllWorkloadScores(state: AppState): Record<string, WorkloadScore> {
-      this._scoreCache.clear();
       const scores: Record<string, WorkloadScore> = {};
-      state.people.forEach(p => { scores[p.id] = this.calculateWorkloadScore(p, state); });
+      state.people.forEach(p => {
+          scores[p.id] = this.calculateWorkloadScore(p, state);
+      });
       return scores;
   },
 
+  // Legacy wrapper for chart compatibility, now using new engine
+  workloadByPerson(state: AppState): Record<string, number> {
+      const out: Record<string, number> = {};
+      state.people.forEach(p => {
+          const score = this.calculateWorkloadScore(p, state);
+          out[p.id] = score.finalScore; 
+      });
+      return out;
+  },
+
+  // Optimization: Check fairness using pre-calculated scores map
   checkFairnessFromScores(personId: string, state: AppState, scoresById: Record<string, WorkloadScore>) {
       const p = this.person(state, personId);
       if(!p || !scoresById[personId]) return null;
+      
       const myScore = scoresById[personId];
-      const peers = state.people.filter(x => x.grade === p.grade && x.unitId === p.unitId && x.id !== p.id);
-      if (peers.length === 0) return { status: 'Balanced', diff: 0, msg: 'No comparable peers' };
-      const peerAvg = peers.reduce((sum, peer) => sum + (scoresById[peer.id]?.utilizationPct || 0), 0) / peers.length;
-      const diff = myScore.utilizationPct - peerAvg;
-      if (diff > 25) return { status: 'Overloaded', diff, msg: `+${diff.toFixed(0)}% vs Peers` };
-      if (diff < -25) return { status: 'Underutilized', diff, msg: `${diff.toFixed(0)}% vs Peers` };
-      return { status: 'Balanced', diff, msg: 'Balanced with peers' };
+      
+      // Peer Group 1: Same Grade AND Same Unit (Specific Peers)
+      const gradePeers = state.people.filter(x => x.grade === p.grade && x.unitId === p.unitId && x.id !== p.id);
+      
+      // Peer Group 2: All Unit Members (Broader Context)
+      const unitPeers = state.people.filter(x => x.unitId === p.unitId && x.id !== p.id);
+
+      // Calculations
+      let gradePeerAvg = 0;
+      if (gradePeers.length > 0) {
+          const scores = gradePeers.map(peer => scoresById[peer.id]?.utilizationPct || 0);
+          gradePeerAvg = scores.reduce((a,b)=>a+b, 0) / scores.length;
+      }
+
+      let unitAvg = 0;
+      if (unitPeers.length > 0) {
+          const scores = unitPeers.map(peer => scoresById[peer.id]?.utilizationPct || 0);
+          unitAvg = scores.reduce((a,b)=>a+b, 0) / scores.length;
+      }
+      
+      const diffGrade = myScore.utilizationPct - gradePeerAvg;
+      const diffUnit = myScore.utilizationPct - unitAvg;
+
+      if (gradePeers.length > 0) {
+          if (diffGrade > 20) return { status: 'Overloaded', diff: diffGrade, msg: `+${diffGrade.toFixed(0)}% vs Grade Peers` };
+          if (diffGrade < -20) return { status: 'Underutilized', diff: diffGrade, msg: `${diffGrade.toFixed(0)}% vs Grade Peers` };
+      } else {
+          if (diffUnit > 25) return { status: 'Overloaded', diff: diffUnit, msg: `+${diffUnit.toFixed(0)}% vs Unit Avg` };
+      }
+
+      if (Math.abs(diffGrade) <= 20 && diffUnit > 30) {
+           return { status: 'Overloaded', diff: diffUnit, msg: `+${diffUnit.toFixed(0)}% vs Unit Avg` };
+      }
+
+      return { status: 'Balanced', diff: diffGrade, msg: 'Within peer range' };
   },
 
-  // --- Scoring & RAG ---
+  // Legacy fallback for single person check
+  checkFairness(personId: string, state: AppState) {
+      const scores = this.calculateAllWorkloadScores(state);
+      return this.checkFairnessFromScores(personId, state, scores);
+  },
+
+  // --- Scoring & RAG (Health) ---
   healthScore(state: AppState, subset?: WorkItem[]) {
     const H = state.settings.weights.health;
+    let totalScore = 0;
+    let count = 0;
+
     const items = subset || state.workItems;
-    if (items.length === 0) return 100;
-    const total = items.reduce((sum, wi) => {
-        let pScore = 100;
+
+    for (const wi of items) {
+        let projectScore = 100;
         const pack = state.packs[wi.id];
+        
         if (pack?.raid) {
-            pack.raid.filter(r => r.type === "Risk" && r.status !== "Closed").forEach(r => {
-                pScore -= (H.impactWeight[r.impact] ?? 5);
-                if (r.status === "Blocked") pScore -= H.blockedPenalty;
-                if (r.due && new Date(r.due).getTime() < Date.now()) pScore -= H.overduePenalty;
-            });
+            const activeRisks = pack.raid.filter(r => r.type === "Risk" && r.status !== "Closed");
+            for (const r of activeRisks) {
+                projectScore -= (H.impactWeight[r.impact] ?? 5);
+                if (r.status === "Blocked") projectScore -= H.blockedPenalty;
+                if (r.due && new Date(r.due).getTime() < Date.now()) projectScore -= H.overduePenalty;
+            }
         }
+        
         const age = this.reportAgeDays(state, wi.id);
         const exp = state.settings.weights.reporting.expectedUpdateDaysByLifecycle[wi.lifecycleId] ?? 14;
-        if (age === null) pScore -= 25; 
-        else if (age > exp) pScore -= Math.min(30, (age - exp) * 2);
-        return sum + Math.max(0, pScore);
-    }, 0);
-    return Math.round(total / items.length);
+        
+        if (age === null) {
+             projectScore -= 25; 
+        } else if (age > exp) {
+             projectScore -= Math.min(30, (age - exp) * 2);
+        }
+
+        const required = (wi.typeId === "T-PRO") ? ["PD", "PM"] : (wi.typeId === "T-ENG") ? ["ED", "EM"] : [];
+        for (const rk of required) {
+            if (!wi.staffing?.some(s => s.roleKey === rk && s.personId)) {
+                projectScore -= H.missingRolePenalty;
+            }
+        }
+
+        totalScore += Math.max(0, projectScore);
+        count++;
+    }
+
+    return count === 0 ? 100 : Math.round(totalScore / count);
   },
 
   ragAnalysis(state: AppState, workId: string) {
     const wi = state.workItems.find(x => x.id === workId);
-    if (!wi) return { status: "Green", reasons: [] };
-    const gov = state.settings.weights.governance;
+    if (!wi) return { status: "Green", reasons: [], meta: {} };
+    
+    // Read governance rules, with fallbacks for safety if state is old
+    const govRules = state.settings.weights.governance || {
+        riskVolumeThreshold: 5,
+        staleReportDaysCritical: 7,
+        staleReportDaysStandard: 14
+    };
+
     const pack = state.packs[workId];
-    const isCritical = (wi.lifecycleId === "L-CUR" || wi.lifecycleId === "L-PRO");
-    const exp = isCritical ? gov.staleReportDaysCritical : gov.staleReportDaysStandard;
+    // Dynamic expiry based on lifecycle
+    const isCriticalPhase = (wi.lifecycleId === "L-CUR" || wi.lifecycleId === "L-PRO");
+    const exp = isCriticalPhase ? govRules.staleReportDaysCritical : govRules.staleReportDaysStandard;
     const age = this.reportAgeDays(state, workId);
-    const reasons: any[] = [];
-    let isRed = false, isAmber = false;
-    if (age === null || age > exp) {
-        isRed = isCritical; isAmber = !isCritical;
-        reasons.push({ label: age === null ? "No reports filed" : `Report stale (${age}d)`, impact: 'High' });
+
+    const reasons: { label: string; impact: 'High'|'Medium'|'Low'; type: 'Report'|'Risk'|'Governance' }[] = [];
+    let isRed = false;
+    let isAmber = false;
+
+    // 1. Reporting Freshness
+    const stale = (age !== null) ? (age > exp) : true;
+    if (stale) {
+        if (isCriticalPhase) {
+             isRed = true;
+             reasons.push({ label: age === null ? "Never reported" : `Report overdue (${age} days)`, impact: 'High', type: 'Report' });
+        } else {
+             isAmber = true;
+             reasons.push({ label: age === null ? "Never reported" : `Report overdue (${age} days)`, impact: 'Medium', type: 'Report' });
+        }
     }
+
+    // 2. Risk Profile
     if (pack?.raid) {
-        const overdueHigh = pack.raid.filter(r => r.type === "Risk" && r.impact === "High" && r.status !== "Closed" && r.due && new Date(r.due).getTime() < Date.now());
-        if (overdueHigh.length > 0) { isRed = true; reasons.push({ label: "Overdue High Risks", impact: 'High' }); }
+        const openRisks = pack.raid.filter(r => r.type === "Risk" && r.status !== "Closed");
+        const highRisks = openRisks.filter(r => r.impact === "High");
+        const overdueHigh = highRisks.filter(r => r.due && new Date(r.due).getTime() < Date.now());
+
+        if (overdueHigh.length > 0) {
+            isRed = true;
+            reasons.push({ label: `${overdueHigh.length} Overdue High Impact Risks`, impact: 'High', type: 'Risk' });
+        } else if (highRisks.length > 0) {
+            isAmber = true;
+            reasons.push({ label: `${highRisks.length} High Impact Risks Open`, impact: 'Medium', type: 'Risk' });
+        }
+        
+        if (openRisks.length > govRules.riskVolumeThreshold) {
+             isAmber = true;
+             reasons.push({ label: `High Risk Volume (${openRisks.length})`, impact: 'Medium', type: 'Risk' });
+        }
     }
-    return { status: (isRed ? "Red" : isAmber ? "Amber" : "Green") as any, reasons };
+
+    let status = "Green";
+    if (isRed) status = "Red";
+    else if (isAmber) status = "Amber";
+
+    return { status, reasons, meta: { lastReportAge: age, allowedGap: exp } };
   },
 
-  ragForWork(state: AppState, workId: string) { return this.ragAnalysis(state, workId).status; },
+  ragForWork(state: AppState, workId: string) {
+    return this.ragAnalysis(state, workId).status;
+  },
 
   getAccessLevel(personId: string | null): AccessLevel {
       if(!personId) return AccessLevel.Tier4_Observer;
-      const tier1 = ["MP", "DMP", "GG-AP"]; 
+      const tier1 = ["MP", "DMP", "GG-AP", "PDM-SAS"]; 
       if(tier1.includes(personId)) return AccessLevel.Tier1_Strategic;
       return AccessLevel.Tier3_Operational;
+  },
+
+  // --- DATA DIAGNOSTICS ---
+  runDiagnostics(state: AppState) {
+      const issues: string[] = [];
+      
+      // 1. Check for Zombie Staffing
+      state.workItems.forEach(w => {
+          w.staffing.forEach(s => {
+              if (s.personId && !state.people.some(p => p.id === s.personId)) {
+                  issues.push(`Work Item ${w.id} has invalid assignment: ${s.personId}`);
+              }
+          });
+      });
+
+      // 2. Check for Circular Reporting Lines
+      state.people.forEach(p => {
+          let current = p.formalManagerId;
+          const visited = new Set<string>();
+          visited.add(p.id);
+          
+          let depth = 0;
+          while(current && current !== 'Board' && depth < 20) {
+              if (visited.has(current)) {
+                  issues.push(`Circular reporting line detected for ${p.name} involving ${current}`);
+                  break;
+              }
+              visited.add(current);
+              const mgr = state.people.find(m => m.id === current);
+              current = mgr ? mgr.formalManagerId : null;
+              depth++;
+          }
+      });
+
+      // 3. Check for Orphan Projects (No valid Unit)
+      state.workItems.forEach(w => {
+          if (!state.settings.taxonomy.units.some(u => u.id === w.teamUnitId)) {
+              issues.push(`Work Item ${w.id} assigned to non-existent unit: ${w.teamUnitId}`);
+          }
+      });
+
+      return issues;
   }
 };
